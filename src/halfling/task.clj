@@ -2,6 +2,10 @@
   (:gen-class)
   (require [halfling.result :as r]))
 
+
+(declare executed?)
+(declare deref-task)
+
 (deftype Task [result queue])
 
 (defmacro task
@@ -13,12 +17,13 @@
   [& body] `(Task. (future (r/success nil))
                    [(fn [x#] ~(cons 'do body))]))
 
-(defmacro when-success [^Task task & body]
+(defmacro ^:private when-success [^Task task & body]
   "Takes a task together with a body of expressions and only runs the body
   if the task has either succeeded, or is currently still running. If the task failed,
   then it propagates this failure and ignores the body completely.
   Note: This does `not` block. It will still execute `body`, even if the task is currently
-  still running."
+  still running.
+  Note: Used interally for some operations."
   {:added "0.1"}
   `(let [result# (.result ~task)]
      (if (and (realized? result#)
@@ -34,11 +39,13 @@
 (defn completed? [^Task task]
   "Returns `true` if the task has finished its computation."
   {:added "0.1"}
+  (assert (task? task) "The input to `completed?` must be a `Task.")
   (realized? (.result task)))
 
 (defn executed? [^Task task]
   "Returns `true` if the task has been executed completely."
   {:added "0.1"}
+  (assert (task? task) "The input to `executed?` must be a `Task.")
   (and (completed? task)
        (empty? (.queue task))))
 
@@ -51,17 +58,19 @@
       (then (task 1) inc)
       (then (task 1) #(task (inc %)))"
   {:added "0.1"}
+  (assert (task? task) "The first input parameter to `then` must be a `Task`")
   (when-success task
                 (Task. (.result task)
                        (conj (.queue task) f))))
 
-(defn deref-task [task]
+(defn deref-task [^Task task]
   "Executes a task blockingly and returns the result of its execution.
   The result is represented explicitly as a structure (see halfling.result)
   and can either be a :success or a :failure. :success will always be associated
   with the final result of that execution, whilst :failure will always be associated
   with descriptive information about its cause."
   {:added "0.1"}
+  (assert (task? task) "The input to `deref-task` must be a `Task`")
   (if (task? task)
     (loop [result @(.result task)
            queue (.queue task)]
@@ -74,14 +83,24 @@
                (str "Cannot dereference input of `" task "`. Please provide an instance of " `Task)
                [])))
 
-;; Should I check to see if every form is a task and fail if one is not?
-;; Should I also accept non-task forms, but treat them a little differently?
-(defmacro do-tasks [bindings body]
+
+(defmacro do-tasks [bindings & body]
   "Similar to `let` but specific to tasks. Evaluates any number of tasks in
   a common context. The name of each binding-form is associated with the future value
   of the task to which it is bound. In contrast to `let`, this returns a new task,
-  that will only perform this computation when run explicitly.
-  Note: The task bindings and ultimately their execution is linearized."
+  that will only perform this computation when run explicitly. It also accepts simple
+  expressions as forms. These are automatically lifted in a `Task` context.
+
+  For example:
+  (do-tasks [a (task (+ 1 1))
+             b (+ a 1)]
+
+  is equivalent to
+
+  (do-tasks [a (task (+ 1 1))
+             b (task (+ a 1)]
+
+  Note: The form execution is serialised."
   {:added "0.1"}
   (assert (vector? bindings) "`do-tasks` requires a vector for its binding")
   (assert (even? (.count bindings)) "`do-tasks` requires an even number of forms in bindings vector")
@@ -90,9 +109,8 @@
        (partition 2)
        (reverse)
        (reduce (fn [f [name form]]
-                 `(then ~form (fn [~name] ~f))) body)))
+                 `(then (task ~form) (fn [~name] ~f))) (cons 'do body))))
 
-;; FIXME: "has completed its execution" -> Not in there
 (defn run-task [^Task task]
   "Runs a task asynchronously and caches its result.
   The result is represented explicitly as a structure (see halfling.result)
@@ -102,20 +120,23 @@
   on a task that is already executing, or has completed its execution.
   Note: To wait on a task, use `deref-task`."
   {:added "0.1"}
+  (assert (task? task) "The input to `run-task` must be a `Task`")
   (when-success task (if (completed? task)
                        (Task. (future (deref-task task)) [])
                        task)))
 
 (defn zip [& tasks]
-  "Returns a new task, that gathers the values of any number of tasks in a vector.
+  "Takes any number of tasks and returns a new task, that gathers their values in a vector.
   Order is preserved."
   {:added "0.1"}
+  (assert (every? task? tasks) "Inputs to `zip` must be tasks.")
   (reduce #(do-tasks [coll %1 val %2] (conj coll val)) (task []) tasks))
 
-(defn zipWith [^Task task f]
+(defn zip-with [^Task task f]
   "Returns a new task, that contains the result of applying `f` to the
   value of `task`, and zipping that value with the value of `task`."
   {:added "0.1"}
+  (assert (task? task) "The first input parameter to `zip-with` must be a `Task`.")
   (then task #(vector (f %) %)))
 
 (defn ap [f & tasks]
@@ -128,4 +149,5 @@
   3 tasks => ternary function
   ..."
   {:added "0.1"}
+  (assert (every? task? tasks) "Inputs to `ap` must be tasks.")
   (then (apply zip tasks) #(apply f %)))

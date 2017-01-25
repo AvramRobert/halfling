@@ -1,0 +1,128 @@
+(ns halfling.task-test
+  (require [halfling.task :refer :all]
+           [halfling.result :as r]
+           [clojure.test :as tst]
+           [clojure.test.check.clojure-test :as ct]
+           [clojure.test.check :as c]
+           [clojure.test.check.generators :as gen]
+           [clojure.test.check.properties :as prop]))
+
+(def exception (new RuntimeException "Well, this is bad."))
+
+;; I. Associativity
+(defn associative [tsk f g]
+  (let [a (deref-task (then tsk #(then (f %) g)))
+        b (deref-task (then (then tsk f) g))]
+    (= a b)))
+
+(ct/defspec associativity
+            100
+            (letfn [(act [bool f a]
+                      (if bool
+                        (task (f a))
+                        (throw exception)))]
+              (prop/for-all [bool gen/boolean
+                             a gen/nat]
+                            (let [α (partial act bool inc)
+                                  β (partial act bool dec)]
+                              (associative (task a) α β)))))
+
+;; II. Right identity
+(defn right-id [tsk]
+  (= (deref-task (then tsk #(task %)))
+     (deref-task tsk)))
+
+(ct/defspec right-identity
+            100
+            (prop/for-all [a gen/nat]
+                          (right-id (task a))))
+
+;; III. Left identity
+(defn left-id [a f]
+  (= (deref-task
+       (then (task a) f))
+     (deref-task (f a))))
+
+(ct/defspec left-identity
+            100
+            (letfn [(f [bool a]
+                      (if bool
+                        (task a)
+                        (task (throw exception))))]
+              (prop/for-all [bool gen/boolean
+                             a gen/nat]
+                            (left-id a (partial f bool)))))
+
+
+;; IV. Asynchronicity
+(defn asynchronous [duration start end]
+  (< (double (/ (- end start) 1000000.0)) duration))
+
+(defn consistent [tsk expected]
+  (= (deref-task tsk) expected))
+
+(ct/defspec asynchronicity
+            100
+            (prop/for-all [i (gen/choose 1 3)
+                           value gen/nat]
+                          (let [duration (* i 5)
+                                s (System/nanoTime)
+                                tsk (run-task
+                                      (task
+                                        (Thread/sleep duration) value))
+                                e (System/nanoTime)]
+                            (and
+                              (asynchronous duration s e)
+                              (consistent tsk (r/success value))))))
+
+;; V. Contextuality
+(defn contextual [tsk]
+  (=
+    (deref-task
+      (do-tasks [a tsk
+                 b (task (inc a))]
+                (task (+ a b))))
+    (deref-task
+      (then tsk
+            (fn [a]
+              (then (task (inc a))
+                    (fn [b]
+                      (task (+ a b)))))))))
+
+(ct/defspec contextuality
+            100
+            (letfn [(f [bool a]
+                      (if bool
+                        (task a)
+                        (task (throw exception))))]
+              (prop/for-all [value gen/nat
+                             bool gen/boolean]
+                            (contextual ((partial f bool) value)))))
+
+
+;; VI. Applicativity
+(defn zips [to-do]
+  (= (->> to-do
+          (map #(task %))
+          (apply zip)
+          (deref-task))
+     (r/success to-do)))
+
+(ct/defspec zipping
+            100
+            (prop/for-all [bool gen/boolean
+                           to-do (-> gen/nat
+                                     (gen/vector)
+                                     (gen/not-empty))]
+                          (zips to-do)))
+
+(defn zipsWith [value]
+  (= (deref-task (zip-with (task value) str))
+     (r/success [(str value) value])))
+
+(ct/defspec zippingWith
+            100
+            (prop/for-all [value gen/nat]
+                          (zipsWith value)))
+
+(tst/run-tests)
