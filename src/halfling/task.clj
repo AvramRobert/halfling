@@ -43,7 +43,7 @@
 
 (defmacro task
   "Takes a body of expressions and yields a `Task` object, that deferes their
-  computation until run explicitly. Running the task (see `run-async` or `run-sync`) will
+  computation until run explicitly. Running the task (see `run-async` or `run`) will
   execute its deferred expressions and subsequently cache their result upon completion.
   In case of `run-async`, task execution can be waited upon by calling `wait`."
   {:added "0.1.0"}
@@ -130,7 +130,7 @@
   with the final result of that execution, whilst :failure will always be associated
   with descriptive information about its cause."
   {:added "0.1.0"}
-  (assert (task? task) "The input to `run-sync` must be a `Task`")
+  (assert (task? task) "The input to `run` must be a `Task`")
   (loop [result @(.result task)
          queue (.queue task)]
     (cond
