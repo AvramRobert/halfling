@@ -7,7 +7,9 @@
 
 (declare completed?, executed?)
 
-(deftype Task [result queue])
+(deftype Task [result queue]
+  IDeref
+  (deref [_] @result))
 
 (defn const-future [value]
   "Wraps a value in a completed `Future` object."
@@ -124,38 +126,34 @@
        (reduce (fn [f [name form]]
                  `(then (task ~form) (fn [~name] ~f))) (cons 'do body))))
 
-(defn run-sync [^Task task]
-  "Executes a task blockingly and returns the result of its execution.
+(defn run [^Task task]
+  "Runs a task blockingly and returns the result of its execution.
   The result is represented explicitly as a structure (see halfling.result)
   and can either be a :success or a :failure. :success will always be associated
   with the final result of that execution, whilst :failure will always be associated
   with descriptive information about its cause."
   {:added "0.1.0"}
   (assert (task? task) "The input to `run-sync` must be a `Task`")
-  (if (task? task)
-    (loop [result @(.result task)
-           queue (.queue task)]
-      (cond
-        (r/failed? result) result
-        (task? (r/get! result)) (recur (run-sync (r/get! result)) queue)
-        (empty? queue) result
-        :else (recur (r/attempt ((first queue) (r/get! result))) (rest queue))))
-    (r/failure "Incompatible task dereference"
-               (str "Cannot dereference input of `" task "`. Please provide an instance of " `Task)
-               [])))
+  (loop [result @(.result task)
+         queue (.queue task)]
+    (cond
+      (r/failed? result) result
+      (task? (r/get! result)) (recur (run (r/get! result)) queue)
+      (empty? queue) result
+      :else (recur (r/attempt ((first queue) (r/get! result))) (rest queue)))))
 
 (defn run-async [^Task task]
-  "Runs a task asynchronously and caches its result.
-  The result is represented explicitly as a structure (see halfling.result)
-  and can either be a :success or a :failure. :success will always be associated
-  with the final result of that execution, whilst :failure will always be associated
-  with descriptive information about its cause. Defaults to `identity` if called
-  on a task that is already executing, or has completed its execution.
-  Note: To wait on a task, use `wait`."
+  "Runs a task asynchronously and caches its future result. Returns a new task, that
+  will containe the cached result. The result is represented explicitly as
+  a structure (see halfling.result) and can either be a :success or a :failure.
+  :success will always be associated with the final result of that execution, whilst
+  :failure will always be associated with descriptive information about its cause.
+  Defaults to `identity` if called on a task that is already executing, or has completed
+  its execution. Note: To wait on a task, use `wait`."
   {:added "0.1.0"}
   (assert (task? task) "The input to `run-async` must be a `Task`")
   (when-success task (if (completed? task)
-                       (Task. (future (run-sync task)) [])
+                       (Task. (future (run task)) [])
                        task)))
 
 (defn wait
@@ -165,13 +163,13 @@
   {:added "0.1.0"}
   ([^Task task]
    (assert (task? task) "The input to `wait` must be a `Task`.")
-   (point @(.result task) (.queue task)))
+   @(.result task))
   ([^Task task timeout-ms]
    (assert (task? task) "The input to `wait` must be a `Task`.")
    (wait task timeout-ms (timeout timeout-ms)))
   ([^Task task timeout-ms timeout-val]
    (assert (task? task) "The input to `wait` must be a `Task`.")
-   (point (deref (.result task) timeout-ms timeout-val) (.queue task))))
+   (deref (.result task) timeout-ms timeout-val)))
 
 (defn peer [^Task task]
   "Returns the result of a task if it is `completed`. If

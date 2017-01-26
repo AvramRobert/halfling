@@ -11,8 +11,8 @@
 
 ;; I. Associativity
 (defn associative [tsk f g]
-  (let [a (run-sync (then tsk #(then (f %) g)))
-        b (run-sync (then (then tsk f) g))]
+  (let [a (run (then tsk #(then (f %) g)))
+        b (run (then (then tsk f) g))]
     (= a b)))
 
 (ct/defspec associativity
@@ -29,8 +29,8 @@
 
 ;; II. Right identity
 (defn right-id [tsk]
-  (= (run-sync (then tsk #(task %)))
-     (run-sync tsk)))
+  (= (run (then tsk #(task %)))
+     (run tsk)))
 
 (ct/defspec right-identity
             100
@@ -39,9 +39,9 @@
 
 ;; III. Left identity
 (defn left-id [a f]
-  (= (run-sync
+  (= (run
        (then (task a) f))
-     (run-sync (f a))))
+     (run (f a))))
 
 (ct/defspec left-identity
             100
@@ -59,19 +59,19 @@
   (< (double (/ (- end start) 1000000.0)) duration))
 
 (defn consistent [tsk expected]
-  (= (run-sync tsk) expected))
+  (= (run tsk) expected))
 
 (defn waitable [tsk expected]
-  (= (peer (wait (run-async tsk))) expected))
+  (= (wait (run-async tsk)) expected))
 
 (defn peerable [tsk]
   (= (peer (run-async tsk)) nil))
 
 (defn timoutable
   ([tsk ms]
-   (r/failed? (peer (wait (run-async tsk) ms))))
+   (r/failed? (wait (run-async tsk) ms)))
   ([tsk ms val]
-    (= val (peer (wait (run-async tsk) ms val)))))
+    (= val (wait (run-async tsk) ms val))))
 
 (ct/defspec asynchronicity
             100
@@ -94,11 +94,11 @@
 ;; V. Contextuality
 (defn contextual [tsk]
   (=
-    (run-sync
+    (run
       (do-tasks [a tsk
                  b (task (inc a))]
                 (task (+ a b))))
-    (run-sync
+    (run
       (then tsk
             (fn [a]
               (then (task (inc a))
@@ -121,7 +121,7 @@
   (= (->> to-do
           (map #(task %))
           (apply zip)
-          (run-sync))
+          (run))
      (r/success to-do)))
 
 (ct/defspec zipping
@@ -133,7 +133,7 @@
                           (zips to-do)))
 
 (defn zipsWith [value]
-  (= (run-sync (zip-with (task value) str))
+  (= (run (zip-with (task value) str))
      (r/success [(str value) value])))
 
 (ct/defspec zippingWith
