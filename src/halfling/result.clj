@@ -25,7 +25,10 @@
              :message message
              :trace   trace})))
 
-(defn result? [x] (instance? Result x))
+(defn result?
+  "Returns `true` if input is an instance of `Result`"
+  {:added "0.1.0"}
+  [x] (instance? Result x))
 
 (defmacro attempt [& body]
   "Takes a body of expressions and evaluates them in a `try` block.
@@ -81,13 +84,21 @@
   one of the nests is a failure, then the whole result will
   be considered a failure."
   {:added "0.1.0"}
-  (assert (result? result) "The input to `join?` must be a `Result`.")
+  (assert (result? result) "The input to `join` must be a `Result`.")
   (loop [current result]
     (case (:status current)
       :failure result
       :success (if (instance? Result (get! current))
                  (recur (get! current))
                  current))))
+
+(defn bind [^Result result f]
+  "Takes a result and a function, that operates on its value and returns
+  another result. Applies `f` on the value of `result` and merges the
+  resulting nested results into a single one."
+  {:added "0.1.0"}
+  (assert (result? result) "The input to `bind` must be a `Result`.")
+  (join (fmap result f)))
 
 (defn failed? [^Result result]
   "Returns `true` if the result is a failure."

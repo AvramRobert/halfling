@@ -44,7 +44,7 @@ synchronously or asynchronously.
 ```
 Running a task synchronously returns something called a `Result`. `Result` is a record, that
 represents the outcome of an execution as data. They can either be successful and contain the 
-value of some computation; or failed, and contain information about their cause, message and stack-trace. 
+value of some computation; or failed and contain information about their cause, message and stack-trace. 
 Results themselves are also composable. 
 
 * Asynchronous execution: <br />

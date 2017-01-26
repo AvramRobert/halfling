@@ -7,9 +7,7 @@
 
 (declare completed?, executed?)
 
-(deftype Task [result queue]
-  IDeref
-  (deref [_] @result))
+(deftype Task [result queue])
 
 (defn const-future [value]
   "Wraps a value in a completed `Future` object."
@@ -57,8 +55,7 @@
   if the task has either succeeded, or is currently still running. If the task failed,
   then it propagates this failure and ignores the body completely.
   Note: This does `not` block. It will still execute `body`, even if the task is currently
-  still running.
-  Note: Used interally for some operations."
+  still running."
   {:added "0.1.0"}
   `(let [result# (.result ~task)]
      (if (and (realized? result#)
@@ -144,7 +141,7 @@
 
 (defn run-async [^Task task]
   "Runs a task asynchronously and caches its future result. Returns a new task, that
-  will containe the cached result. The result is represented explicitly as
+  will contain the cached result. The result is represented explicitly as
   a structure (see halfling.result) and can either be a :success or a :failure.
   :success will always be associated with the final result of that execution, whilst
   :failure will always be associated with descriptive information about its cause.
@@ -204,3 +201,14 @@
   {:added "0.1.0"}
   (assert (every? task? tasks) "Inputs to `ap` must be tasks.")
   (then (apply zip tasks) #(apply f %)))
+
+;; FIXME: I don't see why this should'nt also support maps
+(defn sequenceT [coll]
+  "Takes a collection of tasks and returns a task containing a collection
+  with the concrete values of the previous tasks."
+  {:added "0.1.0"}
+  (assert (every? task? coll) "The input to `sequence` must be some collection of tasks")
+  (cond
+    (set? coll) (then (apply zip coll) set)
+    (list? coll) (then (apply zip coll) list)
+    :else (apply zip coll)))

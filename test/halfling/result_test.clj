@@ -33,25 +33,24 @@
          (fmap (comp g f)))))
 
 (defn associative2 [val f g]
-  (= (-> (attempt val)
-         (fmap (fn [a]
-                 (fmap (attempt (f a))
-                       (fn [b]
-                         (attempt (g b))))))
-         (join))
-     (-> (attempt val)
-         (fmap #(attempt (g (f %))))
-         (join))))
+  (= (bind (attempt val)
+           (fn [a]
+             (bind (attempt (f a))
+                   (fn [b] (attempt (g b))))))
+     (bind
+       (bind (attempt val)
+             (fn [a] (attempt (f a))))
+       (fn [b] (attempt (g b))))))
 
 (ct/defspec associativity
             100
-  (letfn [(act [bool f a] (if bool (f a) (throw exception)))]
-    (prop/for-all [bool gen/boolean
-                   value gen/int]
-                  (let [α (partial act bool inc)
-                        β (partial act bool dec)]
-                    (associative1 value α β)
-                    (associative2 value α β)))))
+            (letfn [(act [bool f a] (if bool (f a) (throw exception)))]
+              (prop/for-all [bool gen/boolean
+                             value gen/int]
+                            (let [α (partial act bool inc)
+                                  β (partial act bool dec)]
+                              (associative1 value α β)
+                              (associative2 value α β)))))
 
 ;; II. Fold idempotence
 (defn idempotence [result v]
@@ -60,7 +59,7 @@
 (ct/defspec fold-idempotence
             100
             (prop/for-all [result (gen-result :mixed)
-                           a      gen/int]
+                           a gen/int]
                           (idempotence result a)))
 
 ;; III. Fold malformation

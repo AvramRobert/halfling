@@ -71,7 +71,7 @@
   ([tsk ms]
    (r/failed? (wait (run-async tsk) ms)))
   ([tsk ms val]
-    (= val (wait (run-async tsk) ms val))))
+   (= val (wait (run-async tsk) ms val))))
 
 (ct/defspec asynchronicity
             100
@@ -140,5 +140,28 @@
             100
             (prop/for-all [value gen/nat]
                           (zipsWith value)))
+
+(defn sequences [coll]
+  (letfn [(collectify [x]
+            (cond
+              (set? coll) (set x)
+              (list? coll) (seq x)
+              :else (vec x)))]
+    (= (->> coll
+            (map #(task %))
+            (collectify)
+            (sequenceT)
+            (run))
+       (r/success coll))))
+
+(ct/defspec sequencing
+            100
+            (prop/for-all [s (gen/not-empty (gen/set gen/nat))
+                           l (gen/not-empty (gen/list gen/nat))
+                           v (gen/not-empty (gen/vector gen/nat))]
+                          (and
+                            (sequences s)
+                            (sequences v)
+                            (sequences l))))
 
 (tst/run-tests)
