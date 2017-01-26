@@ -13,7 +13,7 @@
   computation until run explicitly. Running the task (see `run-task`) will execute its deferred
   expressions in a separate thread and subsequently cache their result upon completion.
   Task execution can be waited upon by calling `deref-task`."
-  {:added "0.1"}
+  {:added "0.1.0"}
   [& body] `(Task. (future (r/success nil))
                    [(fn [x#] ~(cons 'do body))]))
 
@@ -24,7 +24,7 @@
   Note: This does `not` block. It will still execute `body`, even if the task is currently
   still running.
   Note: Used interally for some operations."
-  {:added "0.1"}
+  {:added "0.1.0"}
   `(let [result# (.result ~task)]
      (if (and (realized? result#)
               (r/failed? @result#))
@@ -33,18 +33,18 @@
 
 (defn task? [x]
   "Returns `true` if input is an instance of `Task`."
-  {:added "0.1"}
+  {:added "0.1.0"}
   (instance? Task x))
 
 (defn completed? [^Task task]
   "Returns `true` if the task has finished its computation."
-  {:added "0.1"}
+  {:added "0.1.0"}
   (assert (task? task) "The input to `completed?` must be a `Task.")
   (realized? (.result task)))
 
 (defn executed? [^Task task]
   "Returns `true` if the task has been executed completely."
-  {:added "0.1"}
+  {:added "0.1.0"}
   (assert (task? task) "The input to `executed?` must be a `Task.")
   (and (completed? task)
        (empty? (.queue task))))
@@ -57,7 +57,7 @@
    For example:
       (then (task 1) inc)
       (then (task 1) #(task (inc %)))"
-  {:added "0.1"}
+  {:added "0.1.0"}
   (assert (task? task) "The first input parameter to `then` must be a `Task`")
   (when-success task
                 (Task. (.result task)
@@ -69,7 +69,7 @@
   and can either be a :success or a :failure. :success will always be associated
   with the final result of that execution, whilst :failure will always be associated
   with descriptive information about its cause."
-  {:added "0.1"}
+  {:added "0.1.0"}
   (assert (task? task) "The input to `deref-task` must be a `Task`")
   (if (task? task)
     (loop [result @(.result task)
@@ -101,7 +101,7 @@
              b (task (+ a 1)]
 
   Note: The form execution is serialised."
-  {:added "0.1"}
+  {:added "0.1.0"}
   (assert (vector? bindings) "`do-tasks` requires a vector for its binding")
   (assert (even? (.count bindings)) "`do-tasks` requires an even number of forms in bindings vector")
   (->> bindings
@@ -119,23 +119,30 @@
   with descriptive information about its cause. Defaults to `identity` if called
   on a task that is already executing, or has completed its execution.
   Note: To wait on a task, use `deref-task`."
-  {:added "0.1"}
+  {:added "0.1.0"}
   (assert (task? task) "The input to `run-task` must be a `Task`")
   (when-success task (if (completed? task)
                        (Task. (future (deref-task task)) [])
                        task)))
 
+(defn peer [^Task task]
+  "Returns the result of a task if it is `completed`. If
+  the task is executing, returns nil."
+  {:added "0.1.0"}
+  (assert (task? task) "The input to `look` must be a `Task`")
+  (when (completed? task) @(.result task)))
+
 (defn zip [& tasks]
   "Takes any number of tasks and returns a new task, that gathers their values in a vector.
   Order is preserved."
-  {:added "0.1"}
+  {:added "0.1.0"}
   (assert (every? task? tasks) "Inputs to `zip` must be tasks.")
   (reduce #(do-tasks [coll %1 val %2] (conj coll val)) (task []) tasks))
 
 (defn zip-with [^Task task f]
   "Returns a new task, that contains the result of applying `f` to the
   value of `task`, and zipping that value with the value of `task`."
-  {:added "0.1"}
+  {:added "0.1.0"}
   (assert (task? task) "The first input parameter to `zip-with` must be a `Task`.")
   (then task #(vector (f %) %)))
 
@@ -148,6 +155,6 @@
   2 tasks => binary function
   3 tasks => ternary function
   ..."
-  {:added "0.1"}
+  {:added "0.1.0"}
   (assert (every? task? tasks) "Inputs to `ap` must be tasks.")
   (then (apply zip tasks) #(apply f %)))

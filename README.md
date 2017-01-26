@@ -102,7 +102,7 @@ maintain their composability:
 > (t/deref-task crucial-math)
 => #halfling.result.Result{:status :success, :val 2}
 ```
-And again, the magic of referential transparency guarantees
+Again, the magic of referential transparency guarantees
 the same outcome. <b>Note</b>: `run-task` only executes those tasks that came before its invocation. If additional tasks are composed with it while executing, these
 shall remain unexecuted until another call to either `run-task` or `deref-task` is made. 
 For example: 
