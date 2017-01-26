@@ -128,7 +128,7 @@ the complete result is returned:
 #### Task contexts
 Whilst threading tasks from one to the other looks
 pretty, it isn't really that appropriate when performing
-asynchronous actions, that do not flow linearly. 
+asynchronous actions, that do not flow sequentially. 
 For this there is `do-tasks`: 
 ```Clojure
 > (def crucial-maths 
@@ -159,7 +159,7 @@ will contain information about it:
                   (t/then dec)))
 => #'user/failed
 
-> (t/runderef-task failed)
+> (t/run failed)
 => #halfling.result.Result{:status :failure,
                            :val {:cause nil,
                                  :message "HA",
@@ -178,7 +178,7 @@ Both `Task` and `Result` have a number of combinators, that are useful for
 doing certain operations with them. These can be found in their respective namespaces.
 <br />
 <br />
-Now, for the big question. Why not use `manifold` or `imminent` for this sort of thing?
+Now, for the big question. Why not use [manifold](https://github.com/ztellman/manifold) or [imminent](https://github.com/leonardoborges/imminent) for this sort of thing?
 Well.. you probably should. Both are more extensive in the things you can do with them. 
 However, the main characteristics that differentiate this library from those are simplicity and semantics.
 halfling builds upon what Clojure already provides and simply extends their capacity.
