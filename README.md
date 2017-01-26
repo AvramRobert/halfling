@@ -1,11 +1,12 @@
 # halfling
-
+![](resources/intro-image.jpg)
+<br/>
 A simplistic Clojure library for creating, manipulating and composing asynchronous actions, that
 is built atop Clojure's existing support for futures. 
 
 Two of the main things that futures in Clojure lack are composability, and a certain
 degree of laziness. This library attempts to provide these characteristics, plus some additional
-tooling for working with them.
+tools for working with them.
 
 ## Usage     
 The main abstraction in halfling is something called a `Task`. 
