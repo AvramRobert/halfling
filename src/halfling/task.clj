@@ -1,20 +1,53 @@
 (ns halfling.task
   (:gen-class)
-  (require [halfling.result :as r]))
+  (require [halfling.result :as r])
+  (:import (clojure.lang IDeref IPending IBlockingDeref)
+           (java.util.concurrent TimeoutException Future)))
 
 
-(declare executed?)
-(declare deref-task)
+(declare completed?, executed?)
 
 (deftype Task [result queue])
 
+(defn const-future [value]
+  "Wraps a value in a completed `Future` object."
+  {:added "0.1.0"}
+  (reify
+    IDeref
+    (deref [_] value)
+    IBlockingDeref
+    (deref [_ _ _] value)
+    IPending
+    (isRealized [_] true)
+    Future
+    (get [_] value)
+    (get [_ _ _] value)
+    (isDone [_] true)
+    (isCancelled [_] false)
+    (cancel [_ _] false)))
+
+(defn ^:private point
+  "Creates a completed task. It can additionally accept a queue
+  of operations, that are to be applied on `value`."
+  {:added "0.1.0"}
+  ([value]
+   (point value []))
+  ([value queue]
+   (Task. (const-future value) queue)))
+
+(defn ^:private timeout [ms]
+  "Creates a failed result in case of timeout."
+  {:added "0.1.0"}
+  (r/attempt
+    (throw (new TimeoutException (str "Task took too long while waiting (" ms " ms)")))))
+
 (defmacro task
   "Takes a body of expressions and yields a `Task` object, that deferes their
-  computation until run explicitly. Running the task (see `run-task`) will execute its deferred
-  expressions in a separate thread and subsequently cache their result upon completion.
-  Task execution can be waited upon by calling `deref-task`."
+  computation until run explicitly. Running the task (see `run-async` or `run-sync`) will
+  execute its deferred expressions and subsequently cache their result upon completion.
+  In case of `run-async`, task execution can be waited upon by calling `wait`."
   {:added "0.1.0"}
-  [& body] `(Task. (future (r/success nil))
+  [& body] `(Task. (const-future (r/success nil))
                    [(fn [x#] ~(cons 'do body))]))
 
 (defmacro ^:private when-success [^Task task & body]
@@ -63,26 +96,6 @@
                 (Task. (.result task)
                        (conj (.queue task) f))))
 
-(defn deref-task [^Task task]
-  "Executes a task blockingly and returns the result of its execution.
-  The result is represented explicitly as a structure (see halfling.result)
-  and can either be a :success or a :failure. :success will always be associated
-  with the final result of that execution, whilst :failure will always be associated
-  with descriptive information about its cause."
-  {:added "0.1.0"}
-  (assert (task? task) "The input to `deref-task` must be a `Task`")
-  (if (task? task)
-    (loop [result @(.result task)
-           queue (.queue task)]
-      (cond
-        (r/failed? result) result
-        (task? (r/get! result)) (recur (deref-task (r/get! result)) queue)
-        (empty? queue) result
-        :else (recur (r/attempt ((first queue) (r/get! result))) (rest queue))))
-    (r/failure "Incompatible task dereference"
-               (str "Cannot dereference input of `" task "`. Please provide an instance of " `Task)
-               [])))
-
 
 (defmacro do-tasks [bindings & body]
   "Similar to `let` but specific to tasks. Evaluates any number of tasks in
@@ -111,19 +124,54 @@
        (reduce (fn [f [name form]]
                  `(then (task ~form) (fn [~name] ~f))) (cons 'do body))))
 
-(defn run-task [^Task task]
+(defn run-sync [^Task task]
+  "Executes a task blockingly and returns the result of its execution.
+  The result is represented explicitly as a structure (see halfling.result)
+  and can either be a :success or a :failure. :success will always be associated
+  with the final result of that execution, whilst :failure will always be associated
+  with descriptive information about its cause."
+  {:added "0.1.0"}
+  (assert (task? task) "The input to `run-sync` must be a `Task`")
+  (if (task? task)
+    (loop [result @(.result task)
+           queue (.queue task)]
+      (cond
+        (r/failed? result) result
+        (task? (r/get! result)) (recur (run-sync (r/get! result)) queue)
+        (empty? queue) result
+        :else (recur (r/attempt ((first queue) (r/get! result))) (rest queue))))
+    (r/failure "Incompatible task dereference"
+               (str "Cannot dereference input of `" task "`. Please provide an instance of " `Task)
+               [])))
+
+(defn run-async [^Task task]
   "Runs a task asynchronously and caches its result.
   The result is represented explicitly as a structure (see halfling.result)
   and can either be a :success or a :failure. :success will always be associated
   with the final result of that execution, whilst :failure will always be associated
   with descriptive information about its cause. Defaults to `identity` if called
   on a task that is already executing, or has completed its execution.
-  Note: To wait on a task, use `deref-task`."
+  Note: To wait on a task, use `wait`."
   {:added "0.1.0"}
-  (assert (task? task) "The input to `run-task` must be a `Task`")
+  (assert (task? task) "The input to `run-async` must be a `Task`")
   (when-success task (if (completed? task)
-                       (Task. (future (deref-task task)) [])
+                       (Task. (future (run-sync task)) [])
                        task)))
+
+(defn wait
+  "Waits for `task` to complete. It can either wait indefinitely or
+  for a certain amount of milliseconds. Additionally it may accept a
+  value that is to be returned in case of timeout."
+  {:added "0.1.0"}
+  ([^Task task]
+   (assert (task? task) "The input to `wait` must be a `Task`.")
+   (point @(.result task) (.queue task)))
+  ([^Task task timeout-ms]
+   (assert (task? task) "The input to `wait` must be a `Task`.")
+   (wait task timeout-ms (timeout timeout-ms)))
+  ([^Task task timeout-ms timeout-val]
+   (assert (task? task) "The input to `wait` must be a `Task`.")
+   (point (deref (.result task) timeout-ms timeout-val) (.queue task))))
 
 (defn peer [^Task task]
   "Returns the result of a task if it is `completed`. If

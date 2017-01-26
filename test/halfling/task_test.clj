@@ -11,8 +11,8 @@
 
 ;; I. Associativity
 (defn associative [tsk f g]
-  (let [a (deref-task (then tsk #(then (f %) g)))
-        b (deref-task (then (then tsk f) g))]
+  (let [a (run-sync (then tsk #(then (f %) g)))
+        b (run-sync (then (then tsk f) g))]
     (= a b)))
 
 (ct/defspec associativity
@@ -29,8 +29,8 @@
 
 ;; II. Right identity
 (defn right-id [tsk]
-  (= (deref-task (then tsk #(task %)))
-     (deref-task tsk)))
+  (= (run-sync (then tsk #(task %)))
+     (run-sync tsk)))
 
 (ct/defspec right-identity
             100
@@ -39,9 +39,9 @@
 
 ;; III. Left identity
 (defn left-id [a f]
-  (= (deref-task
+  (= (run-sync
        (then (task a) f))
-     (deref-task (f a))))
+     (run-sync (f a))))
 
 (ct/defspec left-identity
             100
@@ -59,30 +59,46 @@
   (< (double (/ (- end start) 1000000.0)) duration))
 
 (defn consistent [tsk expected]
-  (= (deref-task tsk) expected))
+  (= (run-sync tsk) expected))
+
+(defn waitable [tsk expected]
+  (= (peer (wait (run-async tsk))) expected))
+
+(defn peerable [tsk]
+  (= (peer (run-async tsk)) nil))
+
+(defn timoutable
+  ([tsk ms]
+   (r/failed? (peer (wait (run-async tsk) ms))))
+  ([tsk ms val]
+    (= val (peer (wait (run-async tsk) ms val)))))
 
 (ct/defspec asynchronicity
             100
             (prop/for-all [i (gen/choose 1 3)
                            value gen/nat]
                           (let [duration (* i 5)
+                                work (task
+                                       (Thread/sleep duration) value)
                                 s (System/nanoTime)
-                                tsk (run-task
-                                      (task
-                                        (Thread/sleep duration) value))
+                                tsk (run-async work)
                                 e (System/nanoTime)]
                             (and
                               (asynchronous duration s e)
-                              (consistent tsk (r/success value))))))
+                              (consistent work (r/success value))
+                              (waitable work (r/success value))
+                              (peerable work)
+                              (timoutable work (/ duration 2))
+                              (timoutable work (/ duration 2) "default")))))
 
 ;; V. Contextuality
 (defn contextual [tsk]
   (=
-    (deref-task
+    (run-sync
       (do-tasks [a tsk
                  b (task (inc a))]
                 (task (+ a b))))
-    (deref-task
+    (run-sync
       (then tsk
             (fn [a]
               (then (task (inc a))
@@ -105,7 +121,7 @@
   (= (->> to-do
           (map #(task %))
           (apply zip)
-          (deref-task))
+          (run-sync))
      (r/success to-do)))
 
 (ct/defspec zipping
@@ -117,7 +133,7 @@
                           (zips to-do)))
 
 (defn zipsWith [value]
-  (= (deref-task (zip-with (task value) str))
+  (= (run-sync (zip-with (task value) str))
      (r/success [(str value) value])))
 
 (ct/defspec zippingWith
