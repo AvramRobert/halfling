@@ -9,7 +9,7 @@ degree of laziness. This library attempts to provide these characteristics, plus
 tools for working with them.
 
 ## Clojars
-<b>A word of caution:</b> this library is in its infancy. Do not shake in case it starts screaming. <br />
+<b>A word of caution:</b> this library is in its infancy.  <br />
 [![Clojars Project](https://img.shields.io/clojars/v/halfling.svg)](https://clojars.org/halfling)
 ## Usage     
 The main abstraction in halfling is something called a `Task`. 
