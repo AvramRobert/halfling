@@ -5,8 +5,12 @@
 
 (declare result)
 
-(defn of-type? [t v]
-  (= t (type v)))
+(defn of-type? [^Class c v]
+  "Returns true if the type of `v` is equal to that of the
+  supplied class `c`. Used for type-checking and as a more accurate
+  version of `instance?`."
+  {:added "0.1.1"}
+  (= (type v) c))
 
 (defn success [val]
   "Wraps a value in a succeeded `Result`.

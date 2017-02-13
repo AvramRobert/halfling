@@ -61,7 +61,7 @@
   (let [result (.result task)]
     (when (realized? result) @result)))
 
-(defmethod peer ParTask [task] nil)
+(defmethod peer ParTask [task] (r/success nil))
 
 (defmulti completed?
           "Returns `true` if the task has finished its computation."
@@ -74,7 +74,8 @@
 
 (defn task? [x]
   "Returns `true` if input is an instance of `Task`."
-  {:added "0.1.0"}
+  {:added    "0.1.0"
+   :revision "0.1.1"}
   (or
     (r/of-type? Task x)
     (r/of-type? ParTask x)))
@@ -92,7 +93,8 @@
   then it propagates this failure and ignores the body completely.
   Note: This does `not` block. It will still execute `body`, even if the task is currently
   still running."
-  {:added "0.1.0"}
+  {:added    "0.1.0"
+   :revision "0.1.1"}
   `(let [result# (peer ~task)]
      (if (and
            (not (nil? result#))                             ;; don't use `completed?` here because of possible race conditions
@@ -100,16 +102,22 @@
        (Task. result# [])
        ~(cons 'do body))))
 
-(defmulti bind
+(defmulti ^:private bind
+          "Curried `bind` operation for `Task`. Given a task and a function,
+          returns another task containing the result of applying the function
+          to the value of that task once it's completed. In general, the function
+          should preferably return another task. This constraint is however not enforced
+          here."
+          {:added "0.1.1"}
           class)
 
-(defmethod bind Task [task]
+(defmethod ^:private bind Task [task]
   (fn [f]
     (when-success task
                   (Task. (.result task)
                          (conj (.queue task) f)))))
 
-(defmethod bind ParTask [task]
+(defmethod ^:private bind ParTask [task]
   (fn [f]
     (when-success task
                   (ParTask. (.tasks task)
@@ -182,7 +190,8 @@
           (let [f (first (.queue task))
                 args (map r/get! results)]
             (run (point (r/attempt (apply f args)) (rest (.queue task)))))
-          (r/failure "Too many failures" "No")))
+          (let [failed (filter r/failed? results)]
+            (r/failure "One or more tasks have failed" (str "A number of " (count failed) " tasks have failed")))))
       (recur all))))
 
 (defn run-async [task]
@@ -230,7 +239,8 @@
 (defn zip [& tasks]
   "Takes any number of tasks and returns a new task, that gathers their values in a vector.
   Order is preserved."
-  {:added "0.1.0"}
+  {:added "0.1.0"
+   :revision "0.1.1"}
   (assert (every? task? tasks) "Inputs to `zip` must be tasks.")
   (ap vector tasks))
 
@@ -242,7 +252,7 @@
   (then task #(vector (f %) %)))
 
 ;; FIXME: I don't see why this should'nt also support maps
-(defn sequenceT [coll]
+(defn sequenced [coll]
   "Takes a collection of tasks and returns a task containing a collection
   with the concrete values of the previous tasks."
   {:added "0.1.0"}

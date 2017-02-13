@@ -150,7 +150,7 @@
     (= (->> coll
             (map #(task %))
             (collectify)
-            (sequenceT)
+            (sequenced)
             (run))
        (r/success coll))))
 
