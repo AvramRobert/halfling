@@ -261,3 +261,15 @@
     (set? coll) (then (apply zip coll) set)
     (list? coll) (then (apply zip coll) list)
     :else (apply zip coll)))
+
+(defmacro p-map [f coll]
+  "An implementation of parallel map using the task API.
+  Usage is analogous to that of `clojure.core/pmap`"
+  {:added "0.1.1"}
+  `(let [cores# (.availableProcessors (Runtime/getRuntime))
+         partitions# (Math/round ^Float (/ (.count ~coll) cores#))]
+     (->> ~coll
+          (partition partitions#)
+          (map #(task (map ~f %)))
+          (ap (fn [& args#] (apply concat args#)))
+          (run))))
