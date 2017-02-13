@@ -5,6 +5,9 @@
 
 (declare result)
 
+(defn of-type? [t v]
+  (= t (type v)))
+
 (defn success [val]
   "Wraps a value in a succeeded `Result`.
   If the supplied value throws an exception, then this side-effect shall
@@ -28,7 +31,7 @@
 (defn result?
   "Returns `true` if input is an instance of `Result`"
   {:added "0.1.0"}
-  [x] (instance? Result x))
+  [x] (of-type? Result x))
 
 (defmacro attempt [& body]
   "Takes a body of expressions and evaluates them in a `try` block.

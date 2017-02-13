@@ -5,9 +5,10 @@
            (java.util.concurrent TimeoutException Future)))
 
 
-(declare completed?, executed?)
+(declare run, run-async, peer)
 
-(deftype Task [result queue])
+(deftype ^:private Task [result queue])
+(deftype ^:private ParTask [tasks queue])
 
 (defn const-future [value]
   "Wraps a value in a completed `Future` object."
@@ -50,51 +51,83 @@
   [& body] `(Task. (const-future (r/success nil))
                    [(fn [x#] ~(cons 'do body))]))
 
-(defmacro ^:private when-success [^Task task & body]
-  "Takes a task together with a body of expressions and only runs the body
-  if the task has either succeeded, or is currently still running. If the task failed,
-  then it propagates this failure and ignores the body completely.
-  Note: This does `not` block. It will still execute `body`, even if the task is currently
-  still running."
-  {:added "0.1.0"}
-  `(let [result# (.result ~task)]
-     (if (and (realized? result#)
-              (r/failed? @result#))
-       (Task. result# [])
-       ~(cons 'do body))))
+(defmulti peer
+          "Returns the result of a task if it is `completed`. If
+          the task is executing or otherwise unevaluated, returns nil."
+          {:added    "0.1.0"
+           :revision "0.1.1"} class)
+
+(defmethod peer Task [task]
+  (let [result (.result task)]
+    (when (realized? result) @result)))
+
+(defmethod peer ParTask [task] nil)
+
+(defmulti completed?
+          "Returns `true` if the task has finished its computation."
+          {:added    "0.1.0"
+           :revision "0.1.1"} class)
+
+(defmethod completed? Task [task]
+  (realized? (.result task)))
+(defmethod completed? ParTask [_] true)
 
 (defn task? [x]
   "Returns `true` if input is an instance of `Task`."
   {:added "0.1.0"}
-  (instance? Task x))
+  (or
+    (r/of-type? Task x)
+    (r/of-type? ParTask x)))
 
-(defn completed? [^Task task]
-  "Returns `true` if the task has finished its computation."
-  {:added "0.1.0"}
-  (assert (task? task) "The input to `completed?` must be a `Task.")
-  (realized? (.result task)))
-
-(defn executed? [^Task task]
+(defn executed? [task]
   "Returns `true` if the task has been executed completely."
   {:added "0.1.0"}
   (assert (task? task) "The input to `executed?` must be a `Task.")
   (and (completed? task)
        (empty? (.queue task))))
 
-(defn then [^Task task f]
+(defmacro ^:private when-success [task & body]
+  "Takes a task together with a body of expressions and only runs the body
+  if the task has either succeeded, or is currently still running. If the task failed,
+  then it propagates this failure and ignores the body completely.
+  Note: This does `not` block. It will still execute `body`, even if the task is currently
+  still running."
+  {:added "0.1.0"}
+  `(let [result# (peer ~task)]
+     (if (and
+           (not (nil? result#))                             ;; don't use `completed?` here because of possible race conditions
+           (r/failed? result#))
+       (Task. result# [])
+       ~(cons 'do body))))
+
+(defmulti bind
+          class)
+
+(defmethod bind Task [task]
+  (fn [f]
+    (when-success task
+                  (Task. (.result task)
+                         (conj (.queue task) f)))))
+
+(defmethod bind ParTask [task]
+  (fn [f]
+    (when-success task
+                  (ParTask. (.tasks task)
+                            (conj (.queue task) f)))))
+
+
+(defn then [task f]
   "Returns a new task containing the result of applying `f` to the
    value of the task that has been supplied. This application happens
    lazily and only upon completion of `task`. `f` is allowed to return both
    arbitrary values and other tasks.
    For example:
-      (then (task 1) inc)
-      (then (task 1) #(task (inc %)))"
-  {:added "0.1.0"}
-  (assert (task? task) "The first input parameter to `then` must be a `Task`")
-  (when-success task
-                (Task. (.result task)
-                       (conj (.queue task) f))))
-
+     (then (task 1) inc)
+     (then (task 1) #(task (inc %)))"
+  {:added    "0.1.0"
+   :revision "0.1.1"}
+  (assert (task? task) "Input to `then` must be a `Task`")
+  ((bind task) f))
 
 (defmacro do-tasks [bindings & body]
   "Similar to `let` but specific to tasks. Evaluates any number of tasks in
@@ -107,7 +140,7 @@
   (do-tasks [a (task (+ 1 1))
              b (+ a 1)]
 
-  is equivalent to
+  is equivalent tor
 
   (do-tasks [a (task (+ 1 1))
              b (task (+ a 1)]
@@ -123,14 +156,16 @@
        (reduce (fn [f [name form]]
                  `(then (task ~form) (fn [~name] ~f))) (cons 'do body))))
 
-(defn run [^Task task]
-  "Runs a task blockingly and returns the result of its execution.
-  The result is represented explicitly as a structure (see halfling.result)
-  and can either be a :success or a :failure. :success will always be associated
-  with the final result of that execution, whilst :failure will always be associated
-  with descriptive information about its cause."
-  {:added "0.1.0"}
-  (assert (task? task) "The input to `run` must be a `Task`")
+(defmulti run
+          "Runs a task blockingly and returns the result of its execution.
+        The result is represented explicitly as a structure (see halfling.result)
+        and can either be a :success or a :failure. :success will always be associated
+        with the final result of that execution, whilst :failure will always be associated
+        with descriptive information about its cause."
+          {:added    "0.1.0"
+           :revision "0.1.1"} class)
+
+(defmethod run Task [task]
   (loop [result @(.result task)
          queue (.queue task)]
     (cond
@@ -139,13 +174,24 @@
       (empty? queue) result
       :else (recur (r/attempt ((first queue) (r/get! result))) (rest queue)))))
 
-(defn run-async [^Task task]
+(defmethod run ParTask [task]
+  (loop [all (map run-async (.tasks task))]
+    (if (every? executed? all)
+      (let [results (map #(deref (.result %)) all)]
+        (if (every? r/success? results)
+          (let [f (first (.queue task))
+                args (map r/get! results)]
+            (run (point (r/attempt (apply f args)) (rest (.queue task)))))
+          (r/failure "Too many failures" "No")))
+      (recur all))))
+
+(defn run-async [task]
   "Runs a task asynchronously and caches its future result. Returns a new task, that
   will contain the cached result. The result is represented explicitly as
   a structure (see halfling.result) and can either be a :success or a :failure.
   :success will always be associated with the final result of that execution, whilst
   :failure will always be associated with descriptive information about its cause.
-  Defaults to `identity` if called on a task that is already executing, or has completed
+  Defaults to `identity` if called on a task that is already executing, or ha1s completed
   its execution. Note: To wait on a task, use `wait`."
   {:added "0.1.0"}
   (assert (task? task) "The input to `run-async` must be a `Task`")
@@ -168,19 +214,25 @@
    (assert (task? task) "The input to `wait` must be a `Task`.")
    (deref (.result task) timeout-ms timeout-val)))
 
-(defn peer [^Task task]
-  "Returns the result of a task if it is `completed`. If
-  the task is executing, returns nil."
-  {:added "0.1.0"}
-  (assert (task? task) "The input to `look` must be a `Task`")
-  (when (completed? task) @(.result task)))
+(defn ap [f & tasks]
+  "Returns a new task, that uses the values of any number of
+   supplied tasks as function parameters for `f`. It subsequently invokes `f` on
+   those values. Note: The arity of `f` is proportional to the number of supplied tasks.
+   For example:
+    1 task => unary function
+    2 tasks => binary function
+    3 tasks => ternary function
+    ..."
+  {:added    "0.1.0"
+   :revision "0.1.1"}
+  (ParTask. (flatten tasks) [f]))
 
 (defn zip [& tasks]
   "Takes any number of tasks and returns a new task, that gathers their values in a vector.
   Order is preserved."
   {:added "0.1.0"}
   (assert (every? task? tasks) "Inputs to `zip` must be tasks.")
-  (reduce #(do-tasks [coll %1 val %2] (conj coll val)) (task []) tasks))
+  (ap vector tasks))
 
 (defn zip-with [^Task task f]
   "Returns a new task, that contains the result of applying `f` to the
@@ -188,19 +240,6 @@
   {:added "0.1.0"}
   (assert (task? task) "The first input parameter to `zip-with` must be a `Task`.")
   (then task #(vector (f %) %)))
-
-(defn ap [f & tasks]
-  "Returns a new task, that uses the values of any number of
-  supplied tasks as function parameters for `f`. It subsequently invokes `f` on
-  those values. Note: The arity of `f` is proportional to the number of supplied tasks.
-  For example:
-  1 task => unary function
-  2 tasks => binary function
-  3 tasks => ternary function
-  ..."
-  {:added "0.1.0"}
-  (assert (every? task? tasks) "Inputs to `ap` must be tasks.")
-  (then (apply zip tasks) #(apply f %)))
 
 ;; FIXME: I don't see why this should'nt also support maps
 (defn sequenceT [coll]
