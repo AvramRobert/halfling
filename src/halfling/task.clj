@@ -239,7 +239,7 @@
 (defn zip [& tasks]
   "Takes any number of tasks and returns a new task, that gathers their values in a vector.
   Order is preserved."
-  {:added "0.1.0"
+  {:added    "0.1.0"
    :revision "0.1.1"}
   (assert (every? task? tasks) "Inputs to `zip` must be tasks.")
   (ap vector tasks))
@@ -262,14 +262,14 @@
     (list? coll) (then (apply zip coll) list)
     :else (apply zip coll)))
 
-(defmacro p-map [f coll]
+(defn p-map [f coll]
   "An implementation of parallel map using the task API.
   Usage is analogous to that of `clojure.core/pmap`"
   {:added "0.1.1"}
-  `(let [cores# (.availableProcessors (Runtime/getRuntime))
-         partitions# (Math/round ^Float (/ (.count ~coll) cores#))]
-     (->> ~coll
-          (partition partitions#)
-          (map #(task (map ~f %)))
-          (ap (fn [& args#] (apply concat args#)))
-          (run))))
+  (let [cores (.availableProcessors (Runtime/getRuntime))
+        partitions (Math/round ^Float (/ (.count coll) cores))]
+    (->> coll
+         (partition partitions)
+         (map #(task (map f %)))
+         (ap (fn [& args] (apply concat args))))))
+
