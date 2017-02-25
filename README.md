@@ -183,15 +183,18 @@ performed outweighs the distribution overhead. An example usage:
 (def alph (vec (flatten 
                     [(take 26 (iterate #(-> % int inc char) \A))
                      (take 26 (iterate #(-> % int inc char) \a))])))
+=> #'user/alph
 
 (defn rand-str [n]
   (apply str (map (fn [_] (rand-nth alph)) (range 0 n))))
-
+=> #'user/rand-str
 
 (defn strings [amount length]
   (map (fn [_] (rand-str length)) (range 0 amount)))
+=> #'user/strings
 
 (def work (t/p-map clojure.string/lower-case (strings 4000 1000)))
+=> #'user/work
 
 ; (t/run work) or (t/run-async work)
 
