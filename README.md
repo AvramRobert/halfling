@@ -173,6 +173,33 @@ will contain information about it:
                                         [clojure.lang.Compiler eval "Compiler.java" 6927]
                                         ...}}
 ```
+
+#### Parallelism
+As of version `0.1.1`, halfing supports parallel execution with the functions `ap`, `zip` and
+`sequenced` (see `halfing.task`). Additionally, there is also a `p-map` implementation available, 
+which uses the API. This, similar to Clojure's `pmap`, should only be used when the computation
+performed outweighs the distribution overhead. An example usage: 
+```clojure
+(def alph (vec (flatten 
+                    [(take 26 (iterate #(-> % int inc char) \A))
+                     (take 26 (iterate #(-> % int inc char) \a))])))
+
+(defn rand-str [n]
+  (apply str (map (fn [_] (rand-nth alph)) (range 0 n))))
+
+
+(defn strings [amount length]
+  (map (fn [_] (rand-str length)) (range 0 amount)))
+
+(def work (t/p-map clojure.string/lower-case (strings 4000 1000)))
+
+; (t/run work) or (t/run-async work)
+
+(time (do (t/run work) ()))
+"Elapsed time: 8.076544 msecs"
+=> ()
+```
+
 #### Final thoughts
 Both `Task` and `Result` have a number of combinators, that are useful for
 doing certain operations with them. These can be found in their respective namespaces.
