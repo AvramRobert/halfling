@@ -25,7 +25,7 @@
   expected to be a vector of some individual traces."
   {:added "0.1.0"}
   ([cause message]
-    (failure cause message []))
+   (failure cause message []))
   ([cause message trace]
    (Result. :failure
             {:cause   cause
@@ -50,31 +50,35 @@
                    (vec (.getStackTrace e#))))))
 
 (defn fold [^Result result succ-f err-f]
-  "Takes a result together with two functions and applies `succ-f` on that result
-  in case of success, and `err-f` otherwise. If somehow the status of a result is neither
+  "Takes a result together with two functions and applies `succ-f` on the value of that result
+  in case of success, and `err-f` on its error trace otherwise. If somehow the status of a result is neither
   :success nor :failure, then returns a failure."
   {:added "0.1.0"}
   (assert (result? result) "The first input parameter to `fold` must be a `Result`.")
   (case (:status result)
-    :success (succ-f result)
-    :failure (err-f result)
+    :success (succ-f (:val result))
+    :failure (err-f (:val result))
     (failure "Fold on incorrect `Result` status"
              (str "The status of `" (:status result) "` is not supported")
              [])))
 
 (defn get! [^Result result]
   "Extracts the value of a `Result` in case it succeeded.
-  Defaults to `identity` in case of a failure."
+  Doesn't unwrap in case of failure.
+  Instead returns the same result.
+  Use `fold` directly to unwrap the failed case."
   {:added "0.1.0"}
   (assert (result? result) "The input to `get!` must be a `Result`.")
-  (fold result :val identity))
+  (fold result identity #(failure (:cause %)
+                                  (:message %)
+                                  (:trace %))))
 
 (defn get-or [^Result result else]
   "Extracts the value of a `Result` in case it succeeded,
   returns `else` in case it failed."
   {:added "0.1.0"}
   (assert (result? result) "The first input parameter to `get-or` must be a `Result`.")
-  (fold result get! (fn [_] else)))
+  (fold result identity (fn [_] else)))
 
 (defn fmap [^Result result f]
   "Applies a function to the value of the supplied result.
@@ -83,7 +87,9 @@
   to a failure."
   {:added "0.1.0"}
   (assert (result? result) "The first input parameter to `fmap` must be a `Result`.")
-  (fold result #(attempt (f (get! %))) identity))
+  (fold result #(attempt (f %)) #(failure (:cause %)
+                                          (:message %)
+                                          (:trace %))))
 
 (defn join [^Result result]
   "The equivalent of `flatten` but for `Result`.

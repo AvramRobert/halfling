@@ -1,6 +1,5 @@
 (ns halfling.result-test
   (require [halfling.result :refer :all]
-           [clojure.test :as tst]
            [clojure.test.check.clojure-test :as ct]
            [clojure.test.check :as c]
            [clojure.test.check.generators :as gen]
@@ -83,6 +82,3 @@
             100
             (prop/for-all [result (gen-result :failures)]
                           (consistency result)))
-
-
-(tst/run-tests)

@@ -1,7 +1,6 @@
 (ns halfling.task-test
   (require [halfling.task :refer :all]
            [halfling.result :as r]
-           [clojure.test :as tst]
            [clojure.test.check.clojure-test :as ct]
            [clojure.test.check :as c]
            [clojure.test.check.generators :as gen]
@@ -163,5 +162,3 @@
                             (sequences s)
                             (sequences v)
                             (sequences l))))
-
-(tst/run-tests)
