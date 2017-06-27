@@ -53,7 +53,8 @@
   "Takes a result together with two functions and applies `succ-f` on the value of that result
   in case of success, and `err-f` on its error trace otherwise. If somehow the status of a result is neither
   :success nor :failure, then returns a failure."
-  {:added "0.1.0"}
+  {:added "0.1.0"
+   :revision "0.1.2"}
   (assert (result? result) "The first input parameter to `fold` must be a `Result`.")
   (case (:status result)
     :success (succ-f (:val result))

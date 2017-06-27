@@ -175,7 +175,7 @@ will contain information about it:
 ```
 
 #### Parallelism
-As of version `0.1.1`, halfing supports parallel execution with the functions `ap`, `zip` and
+Halfing supports parallel execution with the functions `mapply`, `zip` and
 `sequenced` (see `halfing.task`). Additionally, there is also a `p-map` implementation available, 
 which uses the API. This, similar to Clojure's `pmap`, should only be used when the computation
 performed outweighs the distribution overhead. An example usage: 

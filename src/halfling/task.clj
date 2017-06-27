@@ -223,7 +223,7 @@
    (assert (task? task) "The input to `wait` must be a `Task`.")
    (deref (.result task) timeout-ms timeout-val)))
 
-(defn ap [f & tasks]
+(defn mapply [f & tasks]
   "Returns a new task, that uses the values of any number of
    supplied tasks as function parameters for `f`. It subsequently invokes `f` on
    those values. Note: The arity of `f` is proportional to the number of supplied tasks.
@@ -233,7 +233,7 @@
     3 tasks => ternary function
     ..."
   {:added    "0.1.0"
-   :revision "0.1.1"}
+   :revision "0.1.3"}
   (ParTask. (flatten tasks) [f]))
 
 (defn zip [& tasks]
@@ -242,7 +242,7 @@
   {:added    "0.1.0"
    :revision "0.1.1"}
   (assert (every? task? tasks) "Inputs to `zip` must be tasks.")
-  (ap vector tasks))
+  (mapply vector tasks))
 
 (defn zip-with [^Task task f]
   "Returns a new task, that contains the result of applying `f` to the
@@ -271,5 +271,5 @@
     (->> coll
          (partition partitions)
          (map #(task (map f %)))
-         (ap (fn [& args] (apply concat args))))))
+         (mapply (fn [& args] (apply concat args))))))
 
