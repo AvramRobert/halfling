@@ -114,6 +114,9 @@
   (assert (result? result) "The input to `bind` must be a `Result`.")
   (join (fmap result f)))
 
+(defn recover [^Result result f]
+  (fold result #(success %) #(attempt (f %))))
+
 (defn failed? [^Result result]
   "Returns `true` if the result is a failure."
   {:added "0.1.0"}

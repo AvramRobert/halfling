@@ -7,8 +7,8 @@
 
 (declare run, run-async, peer)
 
-(deftype ^:private Task [result queue])
-(deftype ^:private ParTask [tasks queue])
+(deftype ^:private Task [result queue handler])
+(deftype ^:private ParTask [tasks queue handler])
 
 (defn const-future [value]
   "Wraps a value in a completed `Future` object."
@@ -34,7 +34,7 @@
   ([value]
    (point value []))
   ([value queue]
-   (Task. (const-future value) queue)))
+   (Task. (const-future value) queue nil)))
 
 (defn ^:private timeout [ms]
   "Creates a failed result in case of timeout."
@@ -49,7 +49,8 @@
   In case of `run-async`, task execution can be waited upon by calling `wait`."
   {:added "0.1.0"}
   [& body] `(Task. (const-future (r/success nil))
-                   [(fn [x#] ~(cons 'do body))]))
+                   [(fn [x#] ~(cons 'do body))]
+                   nil))
 
 (defmulti peer
           "Returns the result of a task if it is `completed`. If
@@ -99,7 +100,7 @@
      (if (and
            (not (nil? result#))                             ;; don't use `completed?` here because of possible race conditions
            (r/failed? result#))
-       (Task. result# [])
+       (Task. result# [] (.handler ~task))
        ~(cons 'do body))))
 
 (defmulti ^:private bind
@@ -115,13 +116,15 @@
   (fn [f]
     (when-success task
                   (Task. (.result task)
-                         (conj (.queue task) f)))))
+                         (conj (.queue task) f)
+                         (.handler task)))))
 
 (defmethod ^:private bind ParTask [task]
   (fn [f]
     (when-success task
                   (ParTask. (.tasks task)
-                            (conj (.queue task) f)))))
+                            (conj (.queue task) f)
+                            (.handler task)))))
 
 
 (defn then [task f]
@@ -177,6 +180,7 @@
   (loop [result @(.result task)
          queue (.queue task)]
     (cond
+      (and (r/failed? result) (.handler task)) (r/recover result (.handler task))
       (r/failed? result) result
       (task? (r/get! result)) (recur (run (r/get! result)) queue)
       (empty? queue) result
@@ -205,8 +209,17 @@
   {:added "0.1.0"}
   (assert (task? task) "The input to `run-async` must be a `Task`")
   (when-success task (if (completed? task)
-                       (Task. (future (run task)) [])
+                       (Task. (future (run task)) [] nil)
                        task)))
+
+
+(defmulti recover (fn [task-type _] (class task-type)))
+
+(defmethod recover Task [task f]
+  (Task. (.result task) (.queue task) f))
+
+(defmethod recover ParTask [task f]
+  (ParTask. (.tasks task) (.queue task) f))
 
 (defn wait
   "Waits for `task` to complete. It can either wait indefinitely or
@@ -234,7 +247,7 @@
     ..."
   {:added    "0.1.0"
    :revision "0.1.3"}
-  (ParTask. (flatten tasks) [f]))
+  (ParTask. (flatten tasks) [f] nil))
 
 (defn zip [& tasks]
   "Takes any number of tasks and returns a new task, that gathers their values in a vector.
