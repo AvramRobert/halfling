@@ -1,4 +1,4 @@
-(defproject halfling "0.1.3-SNAPSHOT"
+(defproject halfling "0.1.4-SNAPSHOT"
   :description "A simple library for composing asynchronous actions"
   :url "http://example.com/FIXME"
   :license {:name "Eclipse Public License"

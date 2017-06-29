@@ -31,7 +31,8 @@
 (defn ^:private point
   "Creates a completed task. It can additionally accept a queue
   of operations, that are to be applied on `value`."
-  {:added "0.1.0"}
+  {:added "0.1.0"
+   :revision "0.1.4"}
   ([value]
    (point value []))
   ([value queue]
@@ -82,8 +83,8 @@
   {:added    "0.1.0"
    :revision "0.1.4"}
   (or
-    (= (type x) Task)
-    (= (type x) ParTask)))
+    (= Task (type x))
+    (= ParTask (type x))))
 
 (defn executed? [task]
   "Returns `true` if the task has been executed completely."
@@ -176,7 +177,7 @@
         with the final result of that execution, whilst :failure will always be associated
         with descriptive information about its cause."
           {:added    "0.1.0"
-           :revision "0.1.1"} type)
+           :revision "0.1.4"} type)
 
 (defmethod run Task [task]
   (loop [result @(.result task)
@@ -210,7 +211,8 @@
   :failure will always be associated with descriptive information about its cause.
   Defaults to `identity` if called on a task that is already executing, or ha1s completed
   its execution. Note: To wait on a task, use `wait`."
-  {:added "0.1.0"}
+  {:added "0.1.0"
+   :revision "0.1.4"}
   (assert (task? task) "The input to `run-async` must be a `Task`")
   (when-success task (if (completed? task)
                        (Task. (future (run task)) [] nil)
@@ -257,7 +259,7 @@
     3 tasks => ternary function
     ..."
   {:added    "0.1.0"
-   :revision "0.1.3"}
+   :revision "0.1.4"}
   (ParTask. (flatten tasks) [f] nil))
 
 (defn zip [& tasks]

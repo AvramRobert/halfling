@@ -3,8 +3,7 @@
            [clojure.test.check.clojure-test :as ct]
            [clojure.test.check :as c]
            [clojure.test.check.generators :as gen]
-           [clojure.test.check.properties :as prop]
-           [halfling.result :as r]))
+           [clojure.test.check.properties :as prop]))
 
 
 (def exception (new RuntimeException "Well, this is bad."))
@@ -86,12 +85,17 @@
 
 ;; V. Recovery
 (defn recovered [recovered-result value]
-  (and (r/success? recovered-result)
-       (= value (r/get! recovered-result))))
+  (and (success? recovered-result)
+       (= value (get! recovered-result))))
+
+(defn refailed [failed-recovery]
+  (failed? failed-recovery))
 
 (ct/defspec recovery
             100
             (prop/for-all [result (gen-result :failures)
                            value gen/any]
                           (recovered
-                            (r/recover result (fn [_] value)) value)))
+                            (recover result (fn [_] value)) value)
+                          (refailed
+                            (recover result (fn [_] (throw exception))))))

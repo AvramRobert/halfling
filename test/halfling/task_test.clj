@@ -169,6 +169,10 @@
     (and (r/success? result)
          (= value (r/get! result)))))
 
+(defn refailed [failed-recovery]
+  (let [result (run failed-recovery)]
+    (r/failed? result)))
+
 (ct/defspec recovery
             100
             (prop/for-all [value gen/any]
@@ -178,4 +182,7 @@
                           (-> (zip (task value) (task value))
                               (then (fn [_ _] (throw exception)))
                               (recover (fn [_] value))
-                              (recovered value))))
+                              (recovered value))
+                          (-> (task (throw exception))
+                              (recover (fn [_] (throw exception)))
+                              (refailed))))

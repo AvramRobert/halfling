@@ -38,7 +38,7 @@
   {:added "0.1.0"
    :revision "0.1.4"}
   [x]
-  (= (type x) Result))
+  (= Result (type x)))
 
 (defmacro attempt [& body]
   "Takes a body of expressions and evaluates them in a `try` block.
@@ -57,7 +57,7 @@
   in case of success, and `err-f` on its error trace otherwise. If somehow the status of a result is neither
   :success nor :failure, then returns a failure."
   {:added "0.1.0"
-   :revision "0.1.2"}
+   :revision "0.1.4"}
   (assert (result? result) "The first input parameter to `fold` must be a `Result`.")
   (case (.status result)
     :success (succ-f (.val result))
@@ -100,7 +100,8 @@
   Nested results are flattened out into a single one. If
   one of the nests is a failure, then the whole result will
   be considered a failure."
-  {:added "0.1.0"}
+  {:added "0.1.0"
+   :revision "0.1.4"}
   (assert (result? result) "The input to `join` must be a `Result`.")
   (loop [current result]
     (case (.status current)
