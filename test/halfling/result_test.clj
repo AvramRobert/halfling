@@ -63,8 +63,8 @@
 
 ;; III. Fold malformation
 (defn malformation [result]
-  (-> result
-      (assoc :status :malformed)
+  (-> :malformed
+      (->Result (.val result))
       (fold (fn [_] ())
             (fn [_] ()))
       (failed?)))

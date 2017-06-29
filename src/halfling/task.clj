@@ -1,14 +1,15 @@
 (ns halfling.task
-  (:gen-class)
   (require [halfling.result :as r])
-  (:import (clojure.lang IDeref IPending IBlockingDeref)
+  (:import (clojure.lang IDeref IPending IBlockingDeref IMeta)
            (java.util.concurrent TimeoutException Future)))
 
+(declare run, run-async)
 
-(declare run, run-async, peer)
+(deftype Task [result queue handler]
+  IMeta (meta [_] {:type Task}))
 
-(deftype ^:private Task [result queue handler])
-(deftype ^:private ParTask [tasks queue handler])
+(deftype ParTask [tasks queue handler]
+  IMeta (meta [_] {:type ParTask}))
 
 (defn const-future [value]
   "Wraps a value in a completed `Future` object."
@@ -34,7 +35,9 @@
   ([value]
    (point value []))
   ([value queue]
-   (Task. (const-future value) queue nil)))
+   (point (const-future value) queue nil))
+  ([value queue handler]
+   (Task. (const-future value) queue handler)))
 
 (defn ^:private timeout [ms]
   "Creates a failed result in case of timeout."
@@ -71,15 +74,16 @@
 
 (defmethod completed? Task [task]
   (realized? (.result task)))
+
 (defmethod completed? ParTask [_] true)
 
 (defn task? [x]
   "Returns `true` if input is an instance of `Task`."
   {:added    "0.1.0"
-   :revision "0.1.1"}
+   :revision "0.1.4"}
   (or
-    (r/of-type? Task x)
-    (r/of-type? ParTask x)))
+    (= (type x) Task)
+    (= (type x) ParTask)))
 
 (defn executed? [task]
   "Returns `true` if the task has been executed completely."
@@ -104,28 +108,26 @@
        ~(cons 'do body))))
 
 (defmulti ^:private bind
-          "Curried `bind` operation for `Task`. Given a task and a function,
+          "`bind` operation for `Task`. Given a task and a function,
           returns another task containing the result of applying the function
           to the value of that task once it's completed. In general, the function
           should preferably return another task. This constraint is however not enforced
           here."
-          {:added "0.1.1"}
-          class)
+          {:added "0.1.1"
+           :revision "0.1.4"}
+          (fn [c _] (type c)))
 
-(defmethod ^:private bind Task [task]
-  (fn [f]
-    (when-success task
-                  (Task. (.result task)
-                         (conj (.queue task) f)
-                         (.handler task)))))
+(defmethod ^:private bind Task [task f]
+  (when-success task
+                (Task. (.result task)
+                       (conj (.queue task) f)
+                       (.handler task))))
 
-(defmethod ^:private bind ParTask [task]
-  (fn [f]
-    (when-success task
-                  (ParTask. (.tasks task)
-                            (conj (.queue task) f)
-                            (.handler task)))))
-
+(defmethod ^:private bind ParTask [task f]
+  (when-success task
+                (ParTask. (.tasks task)
+                          (conj (.queue task) f)
+                          (.handler task))))
 
 (defn then [task f]
   "Returns a new task containing the result of applying `f` to the
@@ -136,9 +138,9 @@
      (then (task 1) inc)
      (then (task 1) #(task (inc %)))"
   {:added    "0.1.0"
-   :revision "0.1.1"}
+   :revision "0.1.4"}
   (assert (task? task) "Input to `then` must be a `Task`")
-  ((bind task) f))
+  (bind task f))
 
 (defmacro do-tasks [bindings & body]
   "Similar to `let` but specific to tasks. Evaluates any number of tasks in
@@ -174,7 +176,7 @@
         with the final result of that execution, whilst :failure will always be associated
         with descriptive information about its cause."
           {:added    "0.1.0"
-           :revision "0.1.1"} class)
+           :revision "0.1.1"} type)
 
 (defmethod run Task [task]
   (loop [result @(.result task)
@@ -191,9 +193,11 @@
     (if (every? executed? all)
       (let [results (map #(deref (.result %)) all)]
         (if (every? r/success? results)
-          (let [f (first (.queue task))
+          (let [queue (.queue task)
+                h (.handler task)
+                f (first queue)
                 args (map r/get! results)]
-            (run (point (r/attempt (apply f args)) (rest (.queue task)))))
+            (run (point (r/attempt (apply f args)) (rest (.queue task)) h)))
           (let [failed (filter r/failed? results)]
             (r/failure "One or more tasks have failed" (str "A number of " (count failed) " tasks have failed")))))
       (recur all))))
@@ -213,12 +217,19 @@
                        task)))
 
 
-(defmulti recover (fn [task-type _] (class task-type)))
+(defmulti recover
+          "In case of failure, applies handler function `f` to the
+          failed state of the task. The result of that application gets
+          promoted to a `Result`."
+          {:added "0.1.4"}
+          (fn [task _] (type task)))
 
 (defmethod recover Task [task f]
+  (assert (task? task) "The input to `recover` must be a `Task`")
   (Task. (.result task) (.queue task) f))
 
 (defmethod recover ParTask [task f]
+  (assert (task? task) "The input to `recover` must be a `Task`")
   (ParTask. (.tasks task) (.queue task) f))
 
 (defn wait

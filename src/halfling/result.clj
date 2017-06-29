@@ -1,16 +1,17 @@
 (ns halfling.result
-  (:gen-class))
+  (:import (clojure.lang IMeta)))
 
-(defrecord Result [status val])
+(declare result result?)
 
-(declare result)
-
-(defn of-type? [^Class c v]
-  "Returns true if the type of `v` is equal to that of the
-  supplied class `c`. Used for type-checking and as a more accurate
-  version of `instance?`."
-  {:added "0.1.1"}
-  (= (type v) c))
+(deftype Result [status val]
+  IMeta
+  (meta [_] {:type Result})
+  Object
+  (equals [_ that]
+    (if (result? that)
+      (and (= status (.status that))
+           (= val (.val that)))
+      false)))
 
 (defn success [val]
   "Wraps a value in a succeeded `Result`.
@@ -34,8 +35,10 @@
 
 (defn result?
   "Returns `true` if input is an instance of `Result`"
-  {:added "0.1.0"}
-  [x] (of-type? Result x))
+  {:added "0.1.0"
+   :revision "0.1.4"}
+  [x]
+  (= (type x) Result))
 
 (defmacro attempt [& body]
   "Takes a body of expressions and evaluates them in a `try` block.
@@ -56,11 +59,11 @@
   {:added "0.1.0"
    :revision "0.1.2"}
   (assert (result? result) "The first input parameter to `fold` must be a `Result`.")
-  (case (:status result)
-    :success (succ-f (:val result))
-    :failure (err-f (:val result))
+  (case (.status result)
+    :success (succ-f (.val result))
+    :failure (err-f (.val result))
     (failure "Fold on incorrect `Result` status"
-             (str "The status of `" (:status result) "` is not supported")
+             (str "The status of `" (.status result) "` is not supported")
              [])))
 
 (defn get! [^Result result]
@@ -100,7 +103,7 @@
   {:added "0.1.0"}
   (assert (result? result) "The input to `join` must be a `Result`.")
   (loop [current result]
-    (case (:status current)
+    (case (.status current)
       :failure result
       :success (if (instance? Result (get! current))
                  (recur (get! current))
@@ -115,6 +118,10 @@
   (join (fmap result f)))
 
 (defn recover [^Result result f]
+  "In case of failure, applies a handler function `f` to the failed state
+  of `result`. The result of that application gets promoted to a `Result`."
+  {:added "0.1.4"}
+  (assert (result? result) "The input to `recover` must be a `Result`")
   (fold result #(success %) #(attempt (f %))))
 
 (defn failed? [^Result result]
