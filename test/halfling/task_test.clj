@@ -162,3 +162,20 @@
                             (sequences s)
                             (sequences v)
                             (sequences l))))
+
+;; V. Recovery
+(defn recovered [recovered-task value]
+  (let [result (run recovered-task)]
+    (and (r/success? result)
+         (= value (r/get! result)))))
+
+(ct/defspec recovery
+            100
+            (prop/for-all [value gen/any]
+                          (-> (task (throw exception))
+                              (recover (fn [_] value))
+                              (recovered value))
+                          (-> (zip (task value) (task value))
+                              (then (fn [_ _] (throw exception)))
+                              (recover (fn [_] value))
+                              (recovered value))))

@@ -3,7 +3,8 @@
            [clojure.test.check.clojure-test :as ct]
            [clojure.test.check :as c]
            [clojure.test.check.generators :as gen]
-           [clojure.test.check.properties :as prop]))
+           [clojure.test.check.properties :as prop]
+           [halfling.result :as r]))
 
 
 (def exception (new RuntimeException "Well, this is bad."))
@@ -21,7 +22,6 @@
                          (if (first (gen/sample gen/boolean 1))
                            i
                            (throw exception)))) gen/any)))
-
 
 ;; I. Associativity
 (defn associative1 [val f g]
@@ -82,3 +82,16 @@
             100
             (prop/for-all [result (gen-result :failures)]
                           (consistency result)))
+
+
+;; V. Recovery
+(defn recovered [recovered-result value]
+  (and (r/success? recovered-result)
+       (= value (r/get! recovered-result))))
+
+(ct/defspec recovery
+            100
+            (prop/for-all [result (gen-result :failures)
+                           value gen/any]
+                          (recovered
+                            (r/recover result (fn [_] value)) value)))
