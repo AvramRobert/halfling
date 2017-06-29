@@ -1,6 +1,14 @@
 # Change Log
 All notable changes to this project will be documented in this file. This change log follows the conventions of [keepachangelog.com](http://keepachangelog.com/).
 
+### 0.1.4
+### Changed
+* Tasks and Results are type-checked more accurately
+* `Result` is now a `deftype`
+
+### Added
+* `recover` function added for both `Task` and `Result`. This applies a function on a result in case of failure.
+
 ### 0.1.3
 ### Changed
 - Renamed `ap` to `mapply`, because `ap` wasn't really the true `ap` function, but rather
