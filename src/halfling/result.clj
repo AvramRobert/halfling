@@ -58,7 +58,7 @@
   :success nor :failure, then returns a failure."
   {:added "0.1.0"
    :revision "0.1.4"}
-  (assert (result? result) "The first input parameter to `fold` must be a `Result`.")
+  (assert (result? result) "The first input parameter to `fold` must be a `Result`")
   (case (.status result)
     :success (succ-f (.val result))
     :failure (err-f (.val result))
@@ -67,21 +67,21 @@
              [])))
 
 (defn get! [^Result result]
-  "Extracts the value of a `Result` in case it succeeded.
-  Doesn't unwrap in case of failure.
-  Instead returns the same result.
-  Use `fold` directly to unwrap the failed case."
-  {:added "0.1.0"}
-  (assert (result? result) "The input to `get!` must be a `Result`.")
-  (fold result identity #(failure (:cause %)
-                                  (:message %)
-                                  (:trace %))))
+  "Extracts the value from a `Result`.
+  If success, returns the computed value.
+  If failure, returns a map with the `:cause`,
+  `:message` and `:trace` of the thrown exception."
+  {:added "0.1.0"
+   :revision "0.1.5"}
+  (assert (result? result) "The input to `get!` must be a `Result`")
+  (fold result identity identity))
 
-(defn get-or [^Result result else]
+(defn get-or-else [^Result result else]
   "Extracts the value of a `Result` in case it succeeded,
   returns `else` in case it failed."
-  {:added "0.1.0"}
-  (assert (result? result) "The first input parameter to `get-or` must be a `Result`.")
+  {:added "0.1.0"
+   :revision "0.1.5"}
+  (assert (result? result) "The first input parameter to `get-or` must be a `Result`")
   (fold result identity (fn [_] else)))
 
 (defn fmap [^Result result f]
@@ -90,7 +90,7 @@
   If the application of `f` throws an exception, it is then converted
   to a failure."
   {:added "0.1.0"}
-  (assert (result? result) "The first input parameter to `fmap` must be a `Result`.")
+  (assert (result? result) "The first input parameter to `fmap` must be a `Result`")
   (fold result #(attempt (f %)) #(failure (:cause %)
                                           (:message %)
                                           (:trace %))))
@@ -102,7 +102,7 @@
   be considered a failure."
   {:added "0.1.0"
    :revision "0.1.4"}
-  (assert (result? result) "The input to `join` must be a `Result`.")
+  (assert (result? result) "The input to `join` must be a `Result`")
   (loop [current result]
     (case (.status current)
       :failure result
@@ -115,7 +115,7 @@
   another result. Applies `f` on the value of `result` and merges the
   resulting nested results into a single one."
   {:added "0.1.0"}
-  (assert (result? result) "The input to `bind` must be a `Result`.")
+  (assert (result? result) "The input to `bind` must be a `Result`")
   (join (fmap result f)))
 
 (defn recover [^Result result f]
@@ -128,11 +128,11 @@
 (defn failed? [^Result result]
   "Returns `true` if the result is a failure."
   {:added "0.1.0"}
-  (assert (result? result) "The input to `failed?` must be a `Result`.")
+  (assert (result? result) "The input to `failed?` must be a `Result`")
   (fold result (fn [_] false) (fn [_] true)))
 
 (defn success? [^Result result]
   "Returns `true` if the result is a success."
   {:added "0.1.0"}
-  (assert (result? result) "The input to `success?` must be a `Result`.")
+  (assert (result? result) "The input to `success?` must be a `Result`")
   (not (failed? result)))

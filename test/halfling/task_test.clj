@@ -186,3 +186,18 @@
                           (-> (task (throw exception))
                               (recover (fn [_] (throw exception)))
                               (refailed))))
+
+
+;; VI. Retrieveability
+(defn retrieved [task value]
+  (= value (get-or-else task nil)))
+
+(defn alternated [task value]
+  (= value (get-or-else task value)))
+
+(ct/defspec retrievability
+            100
+            (prop/for-all [a gen/nat
+                           b gen/nat]
+                          (retrieved (task (+ a b)) (+ a b))
+                          (alternated (task (throw exception)) (+ a b))))

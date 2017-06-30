@@ -1,6 +1,14 @@
 # Change Log
 All notable changes to this project will be documented in this file. This change log follows the conventions of [keepachangelog.com](http://keepachangelog.com/).
 
+### 0.1.5
+### Changed
+`get!` for `Result` now returns the interval value for both failure and success
+
+### Added
+`get-or-else` function for `Task`. This runs the task synchronously and then returns the inner
+result value. Equivalent to `(halfling.result/get! (halfling.task/run task))`.
+
 ### 0.1.4
 ### Changed
 * Tasks and Results are type-checked more accurately

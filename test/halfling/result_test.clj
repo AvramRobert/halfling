@@ -73,15 +73,6 @@
             (prop/for-all [result (gen-result :successes)]
                           (malformation result)))
 
-;; IV. Get consistency
-(defn consistency [failed-result]
-  (failed? (get! failed-result)))
-
-(ct/defspec get-consistency
-            100
-            (prop/for-all [result (gen-result :failures)]
-                          (consistency result)))
-
 
 ;; V. Recovery
 (defn recovered [recovered-result value]

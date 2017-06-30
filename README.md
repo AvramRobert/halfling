@@ -44,12 +44,29 @@ synchronously or asynchronously.
 * Synchronous execution: <br />
 ```Clojure
 > (t/run adding)
-=> #halfling.result.Result{:status :success, :val 2}
+=> #object[halfling.result.Result 0x761144fd "halfling.result.Result@761144fd"]
 ```
-Running a task synchronously returns something called a `Result`. `Result` is a record, that
-represents the outcome of an execution as data. They can either be successful and contain the 
+Running a task synchronously returns something called a `Result`. `Result` is a type, that
+represents the outcome of an execution as data. It can either be successful and contain the 
 value of some computation; or failed and contain information about their cause, message and stack-trace. 
-Results themselves are also composable. 
+Results themselves are also composable and functions for manipulating them can be found in `halfling.result`. 
+
+```clojure
+(require '[halfling.result :as r])
+> (r/get! (t/run adding))
+=> 2
+```
+As of version 0.1.5, `Task` also contains a `get-or-else` function, which synchronously runs
+a task and tries to return the inner value of its result. If the task failed, then it will return the 
+`else` parameter provided in the `get-or-else` function.
+
+```clojure
+> (t/get-or-else adding 0)
+=> 2
+
+> (t/get-or-else (task (throw (new Exception "Nope"))) 0)
+=> 0
+```
 
 * Asynchronous execution: <br />
 ```Clojure
@@ -75,8 +92,8 @@ task and some sort of callback function, and returns a new task:
                          (t/then dec)))
 => #'user/crucial-maths
 
-> (t/run crucial-maths)
-=> #halfling.result.Result{:status :success, :val 2}
+> (t/get-or-else crucial-maths 0)
+=> 2
 ```
 Additionally, the callback function can either return a simple value or
 another task:
@@ -86,8 +103,8 @@ another task:
                          (t/then dec)))
 => #'user/crucial-maths
 
-> (t/run crucial-maths)
-=> #halfling.result.Result{:status :success, :val 2}
+> (t/get-or-else crucial-maths 0)
+=> 2
 ```
 By the magic of referential transparency, this leads
 to the same outcome as before. 
@@ -95,7 +112,7 @@ to the same outcome as before.
 #### Asynchronous composition
 The way tasks are meant to be executed, however, is asynchronously.
 In comparison to synchronous execution, tasks executed asynchronously
-maintain their composability, as they return new tasks instead of direct results:
+maintain their task composability, as they return new tasks instead of direct results:
 ```Clojure
 > (def crucial-math (-> (t/task (+ 1 1))
                         (t/then #(t/task (inc %)))
@@ -103,8 +120,8 @@ maintain their composability, as they return new tasks instead of direct results
                         (t/then dec)))
 => #'user/crucial-math
 
-> (t/wait crucial-math)
-=> #halfling.result.Result{:status :success, :val 3}
+> (r/get! (t/wait crucial-math))
+=> 3
 ```
 <b>Wait</b>, but this isn't the same result as before. The previous result was
 2, now it's 3. That's because `run-async` only executes those tasks that came before its invocation. 
@@ -117,14 +134,13 @@ call to either `run-async` or `run` is made. This is due to its lazy character:
                         (t/then dec))) ;; <- unexecuted
 => #'user/crucial-math
 ```
-By calling `run` (or alternatively `run-async` again), the subsequent operations are also run and
+By calling `run` (or alternatively `run-async` or `get-or-else` again), the subsequent operations are also run and
 the complete result is returned:
 ```Clojure
-> (t/run crucial-math)
-=> #halfling.result.Result{:status :success, :val 2}
-
+> (r/get! (t/run crucial-math))
+=> 2
 ```
- 
+
 #### Task contexts
 Whilst threading tasks from one to the other looks
 pretty, it isn't really that appropriate when performing
@@ -138,8 +154,8 @@ For this there is `do-tasks`:
                   (+ a (- b1 b2))))
 => #'user/crucial-maths
 
-> (t/run crucial-maths)
-=> #halfling.result.Result{:status :success, :val 4}
+> (r/get-or-else crucial-maths 0)
+=> 4
 ```
 With this, you can use binding-forms to treat asynchronous
 values as if they were realized, and use them in that local context.
@@ -159,19 +175,18 @@ will contain information about it:
                   (t/then dec)))
 => #'user/failed
 
-> (t/run failed)
-=> #halfling.result.Result{:status :failure,
-                           :val {:cause nil,
-                                 :message "HA",
-                                 :trace [[user$fn__10421 invokeStatic "form-init2102788460686826432.clj" 3]
-                                        [user$fn__10421 invoke "form-init2102788460686826432.clj" 3]
-                                        [halfling.task$deref_task$fn__1148 invoke "task.clj" 81]
-                                        [halfling.task$deref_task invokeStatic "task.clj" 81]
-                                        [halfling.task$deref_task invoke "task.clj" 66]
-                                        [user$eval10465 invokeStatic "form-init2102788460686826432.clj" 1]
-                                        [user$eval10465 invoke "form-init2102788460686826432.clj" 1]
-                                        [clojure.lang.Compiler eval "Compiler.java" 6927]
-                                        ...}}
+> (r/get! (t/run failed))
+=> {:cause nil,
+    :message "HA",
+    :trace [[user$fn__10421 invokeStatic "form-init2102788460686826432.clj" 3]
+            [user$fn__10421 invoke "form-init2102788460686826432.clj" 3]
+            [halfling.task$deref_task$fn__1148 invoke "task.clj" 81]
+            [halfling.task$deref_task invokeStatic "task.clj" 81]
+            [halfling.task$deref_task invoke "task.clj" 66]
+            [user$eval10465 invokeStatic "form-init2102788460686826432.clj" 1]
+            [user$eval10465 invoke "form-init2102788460686826432.clj" 1]
+            [clojure.lang.Compiler eval "Compiler.java" 6927]
+            ...}
 ```
 
 #### Parallelism

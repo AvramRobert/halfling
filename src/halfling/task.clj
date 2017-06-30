@@ -60,7 +60,7 @@
           "Returns the result of a task if it is `completed`. If
           the task is executing or otherwise unevaluated, returns nil."
           {:added    "0.1.0"
-           :revision "0.1.1"} class)
+           :revision "0.1.1"} type)
 
 (defmethod peer Task [task]
   (let [result (.result task)]
@@ -89,9 +89,17 @@
 (defn executed? [task]
   "Returns `true` if the task has been executed completely."
   {:added "0.1.0"}
-  (assert (task? task) "The input to `executed?` must be a `Task.")
+  (assert (task? task) "The input to `executed?` must be a `Task`")
   (and (completed? task)
        (empty? (.queue task))))
+
+(defn get-or-else [task else]
+  "Runs the supplied `task` synchronously and tires to return the
+  value from its result. Returns `else` in case of failure."
+  {:added "0.1.5"}
+  (assert (task? task) "Input to `get-or-else` should be a `Task`")
+  (-> (run task)
+      (r/get-or-else else)))
 
 (defmacro ^:private when-success [task & body]
   "Takes a task together with a body of expressions and only runs the body
@@ -227,11 +235,9 @@
           (fn [task _] (type task)))
 
 (defmethod recover Task [task f]
-  (assert (task? task) "The input to `recover` must be a `Task`")
   (Task. (.result task) (.queue task) f))
 
 (defmethod recover ParTask [task f]
-  (assert (task? task) "The input to `recover` must be a `Task`")
   (ParTask. (.tasks task) (.queue task) f))
 
 (defn wait
@@ -240,13 +246,13 @@
   value that is to be returned in case of timeout."
   {:added "0.1.0"}
   ([^Task task]
-   (assert (task? task) "The input to `wait` must be a `Task`.")
+   (assert (task? task) "The input to `wait` must be a `Task`")
    @(.result task))
   ([^Task task timeout-ms]
-   (assert (task? task) "The input to `wait` must be a `Task`.")
+   (assert (task? task) "The input to `wait` must be a `Task`")
    (wait task timeout-ms (timeout timeout-ms)))
   ([^Task task timeout-ms timeout-val]
-   (assert (task? task) "The input to `wait` must be a `Task`.")
+   (assert (task? task) "The input to `wait` must be a `Task`")
    (deref (.result task) timeout-ms timeout-val)))
 
 (defn mapply [f & tasks]
@@ -267,14 +273,14 @@
   Order is preserved."
   {:added    "0.1.0"
    :revision "0.1.1"}
-  (assert (every? task? tasks) "Inputs to `zip` must be tasks.")
+  (assert (every? task? tasks) "Inputs to `zip` must be tasks")
   (mapply vector tasks))
 
 (defn zip-with [^Task task f]
   "Returns a new task, that contains the result of applying `f` to the
   value of `task`, and zipping that value with the value of `task`."
   {:added "0.1.0"}
-  (assert (task? task) "The first input parameter to `zip-with` must be a `Task`.")
+  (assert (task? task) "The first input parameter to `zip-with` must be a `Task`")
   (then task #(vector (f %) %)))
 
 ;; FIXME: I don't see why this should'nt also support maps
