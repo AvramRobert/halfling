@@ -52,19 +52,20 @@
                    (.getMessage e#)
                    (vec (.getStackTrace e#))))))
 
-(defn fold [^Result result succ-f err-f]
+(defmacro fold [^Result result succ-f err-f]
   "Takes a result together with two functions and applies `succ-f` on the value of that result
   in case of success, and `err-f` on its error trace otherwise. If somehow the status of a result is neither
   :success nor :failure, then returns a failure."
   {:added "0.1.0"
-   :revision "0.1.4"}
-  (assert (result? result) "The first input parameter to `fold` must be a `Result`")
-  (case (.status result)
-    :success (succ-f (.val result))
-    :failure (err-f (.val result))
-    (failure "Fold on incorrect `Result` status"
-             (str "The status of `" (.status result) "` is not supported")
-             [])))
+   :revision "0.1.6"}
+  `(let [result# ~result]
+     (assert (result? result#) "The first input parameter to `fold` must be a `Result`")
+     (case (.status result#)
+       :success (~succ-f (.val result#))
+       :failure (~err-f (.val result#))
+       (failure "Fold on incorrect `Result` status"
+                (str "The status of `" (.status result#) "` is not supported")
+                []))))
 
 (defn get! [^Result result]
   "Extracts the value from a `Result`.

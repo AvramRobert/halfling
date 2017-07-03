@@ -1,13 +1,21 @@
 # Change Log
 All notable changes to this project will be documented in this file. This change log follows the conventions of [keepachangelog.com](http://keepachangelog.com/).
 
+### 0.1.6
+### Changed
+`fold` in `Result` is now a macro to avoid unnecessary function calls
+
+### Added
+Function `from-result` on `Task`, which promotes a `Result` to a `Task` 
+Invariant here is: for some `Result` r, (run (from-result r)) == r 
+
 ### 0.1.5
 ### Changed
 `get!` for `Result` now returns the interval value for both failure and success
 
 ### Added
 `get-or-else` function for `Task`. This runs the task synchronously and then returns the inner
-result value. Equivalent to `(halfling.result/get! (halfling.task/run task))`.
+result value. Equivalent to `(halfling.result/get! (halfling.task/run task))`
 
 ### 0.1.4
 ### Changed
@@ -15,7 +23,7 @@ result value. Equivalent to `(halfling.result/get! (halfling.task/run task))`.
 * `Result` is now a `deftype`
 
 ### Added
-* `recover` function added for both `Task` and `Result`. This applies a function on a result in case of failure.
+* `recover` function added for both `Task` and `Result`. This applies a function on a result in case of failure
 
 ### 0.1.3
 ### Changed
