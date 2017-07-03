@@ -201,3 +201,17 @@
                            b gen/nat]
                           (retrieved (task (+ a b)) (+ a b))
                           (alternated (task (throw exception)) (+ a b))))
+
+;; VII. Conversion
+(defn converted [task-a task-b]
+  (= (run task-a) (run task-b)))
+
+
+(ct/defspec conversion
+            100
+            (prop/for-all [a gen/nat
+                           b gen/nat]
+                          (let [t1 (task (+ a b))
+                                t2 (task (throw exception))]
+                            (converted t1 (from-result (run t1)))
+                            (converted t2 (from-result (run t2))))))

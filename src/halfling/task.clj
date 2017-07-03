@@ -1,7 +1,8 @@
 (ns halfling.task
   (require [halfling.result :as r])
   (:import (clojure.lang IDeref IPending IBlockingDeref IMeta)
-           (java.util.concurrent TimeoutException Future)))
+           (java.util.concurrent TimeoutException Future)
+           (halfling.result Result)))
 
 (declare run, run-async)
 
@@ -55,6 +56,18 @@
   [& body] `(Task. (const-future (r/success nil))
                    [(fn [x#] ~(cons 'do body))]
                    nil))
+
+(defn from-result [^Result result]
+  "Promotes a `Result` to a `Task`.
+  Task will succeed if result successful, fail otherwise."
+  {:added "0.1.6"}
+  (assert (r/result? result) "Input to `from-result` must be a `Result`")
+  (r/fold result
+          #(task %)
+          #(let [stack-trace (into-array StackTraceElement (:trace %))
+                 exp (doto (new Exception (:message %))
+                       (.setStackTrace stack-trace))]
+             (task (throw exp)))))
 
 (defmulti peer
           "Returns the result of a task if it is `completed`. If
