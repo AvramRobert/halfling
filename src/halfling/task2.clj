@@ -2,7 +2,23 @@
   (:import (clojure.lang IMeta IPending IBlockingDeref IDeref)
            (java.util.concurrent Future)))
 
-(declare task run run-async fulfilled? broken? get!)
+(declare task
+         run
+         run-async
+         wait
+         mapply
+         then
+         recover
+         peer
+         get!
+         get-or-else
+         fulfilled?
+         broken?
+         done?
+         spent?
+         execute
+         execute-par
+         remap)
 
 (deftype Task [exec future actions recovery]
   IMeta (meta [_] {:type Task}))
@@ -61,7 +77,7 @@
 
 (defmacro task [& actions]
   `(Task. serial
-          (const-future (succeed nil))
+          (const-future ~(succeed nil))
           [(fn [x#] ~(cons 'do actions))]
           nil))
 
@@ -81,7 +97,7 @@
 
 (deft execute [task]
   (letfn [(recoverable? [result] (and (fail? result) (.recovery task)))]
-    (loop [result @(.future task)
+    (loop [result  (peer task)
            actions (.actions task)]
       (let [[f & fs] actions
             {status :status
@@ -124,11 +140,11 @@
 
 (deft fulfilled? [task]
   (and (done? task)
-       (success? @(.future task))))
+       (success? (peer task))))
 
 (deft broken? [task]
   (and (done? task)
-       (fail? @(.future task))))
+       (fail? (peer task))))
 
 (deft wait [task]
   (remap task {:future #(const-future @%)}))
@@ -136,10 +152,21 @@
 (deft then [task f]
   (remap task {:actions #(conj % f)}))
 
+(defmacro affect [task & body]
+  `(do
+     (assert (task? ~task) "First argument of `affect` must be a task")
+     (then ~task (fn [x#] (do ~@body)))))
+
 (deft recover [task f]
   (remap task {:recovery f}))
 
 (deft get! [task] (-> (wait task) (.future) (deref) (:value)))
+
+(deft peer [task] @(.future task))
+
+(deft get-or-else [task else]
+  (let [result (-> (wait task) (.future) (deref))]
+    (if (fail? result) else (:value result))))
 
 (defn mapply [f & tasks]
   (assert (every? task? tasks) "All values provided to `mapply` must be tasks")
