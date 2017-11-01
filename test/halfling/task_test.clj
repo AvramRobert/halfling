@@ -172,7 +172,7 @@
              (extract!))
          expected)))
 
-(defspec recoveribility
+(defspec recoverability
          100
          (for-all [int gen/int
                    recover gen/string]
