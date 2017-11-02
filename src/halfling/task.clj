@@ -15,7 +15,9 @@
          fulfilled?
          broken?
          done?
-         spent?
+         executed?
+         attempt
+         task?
          execute
          execute-par
          remap)
@@ -25,12 +27,22 @@
 
 (defrecord Result [status value])
 
-(def ^:const serial :serial)
-(def ^:const parallel :parallel)
+(def ^:private ^:const serial :serial)
+(def ^:private ^:const parallel :parallel)
 
-(defn const-future [value]
+(def ^:private ^:const successful :success)
+(def ^:private ^:const failed :failed)
+
+(defn- is-task? [task fn]
+  (assert (task? task) (str "Input to `" fn "` must be a `Task`")))
+
+(defn- all-tasks? [tasks fn]
+  (assert (every? task? tasks) (str "All values provided to `" fn "` must be `Task`s")))
+
+(defn const-future
   "Wraps a value in a completed `Future` object."
   {:added "1.0.0"}
+  [value]
   (reify
     IDeref
     (deref [_] value)
@@ -45,49 +57,87 @@
     (isCancelled [_] false)
     (cancel [_ _] false)))
 
-(defn- task? [thing] (= Task (type thing)))
+(defn- task?
+  "Returns `true` if `thing` is of type `Task`, `false` otherwise."
+  {:added "1.0.0"}
+  [thing] (= Task (type thing)))
 
-(defn- purely [a]
-  (Task. serial a [] nil))
+(defn- purely
+  "Given any value `a`, returns a task containing it."
+  {:added "1.0.0"}
+  [a] (Task. serial a [] nil))
 
-(defn- pure [result]
-  (purely (const-future result)))
+(defn- pure
+  "Given a `Result`, returns a `task` containing it."
+  {:added "1.0.0"}
+  [result] (purely (const-future result)))
 
 (defn- fail
+  "Returns a failed `Result`."
+  {:added "1.0.0"}
   ([message]
    (fail message []))
   ([message trace]
-   (Result. :failed
+   (Result. failed
             {:message message
              :trace   trace})))
 
-(defn- succeed [value]
-  (Result. :success value))
+(defn- succeed
+  "Returns a successful `Result`."
+  {:added "1.0.0"}
+  [value]
+  (Result. successful value))
 
-(defn- fail? [result]
+(defn- fail?
+  "Returns `true` if `result` is failed, `false` otherwise."
+  {:added "1.0.0"}
+  [result]
   (= :failed (:status result)))
 
-(defn- success? [result]
+(defn- success?
+  "Returns `true` if `result` is successful, `false` otherwise."
+  {:added "1.0.0"}
+  [result]
   (= :success (:status result)))
 
-(defn- is-task? [task fn]
-  (assert (task? task) (str "Input to `" fn "` must be a `Task`")))
+(defmacro attempt
+  "Safely runs a `body` in a `try` block
+   and captures its outcome in a `Result`.
+   In case of a success, the result will look like:
+   {:status :success
+    :value  <result of computation>}
 
-(defn- all-tasks? [tasks fn]
-  (assert (every? task? tasks) (str "All values provided to `" fn "` must be `Task`s")))
-
-(defmacro attempt [& body]
+   In case of a failure, the result will look like:
+   {:status :failure
+    :value  {:message <message of failure>
+             :trace   <possible stack trace>}"
+  {:added "1.0.0"}
+  [& body]
   `(try (succeed ~@body)
         (catch Exception e#
           (fail (.toString e#) (vec (.getStackTrace e#))))))
 
-(defmacro task [& actions]
+(defmacro task
+  "Takes and number of expressions or actions and
+   returns a task that will lazily evaluate them."
+  {:added "1.0.0"}
+  [& actions]
   `(Task. serial
           (const-future ~(succeed nil))
           [(fn [x#] ~(cons 'do actions))]
           nil))
 
-(defn- remap [task map-f]
+(defn- remap
+  "Changes the attributes of `task` as specified by
+   the mappings in `map-f`.
+   `map-f` may contain the following:
+      {:future   a function applied on the current future, that returns a new one
+       :actions  a function applied on the current collection of actions, that returns a new one
+       :exec     a value from #{:serial, :parallel}
+       :recovery a recovery function}
+   Returns a new task containing the change specified in `map-f`."
+  {:added "1.0.0"}
+  [task map-f]
   (is-task? task "remap")
   (let [f        (:future map-f identity)
         g        (:actions map-f identity)
@@ -95,7 +145,11 @@
         recovery (:recovery map-f (.recovery task))]
     (Task. exec (f (.future task)) (g (.actions task)) recovery)))
 
-(defn- execute [task]
+(defn- execute
+  "Executes a `task` blockingly until it finishes.
+   Returns a `Result` of that execution."
+  {:added "1.0.0"}
+  [task]
   (is-task? task "execute")
   (letfn [(recoverable? [result] (and (fail? result) (.recovery task)))]
     (loop [result  (peer task)
@@ -111,7 +165,14 @@
           (nil? f) result
           :else (recur (attempt (f value)) fs))))))
 
-(defn- execute-par [task]
+(defn- execute-par
+  "A `task` executed by `execute-par` will contain as payload a collection
+   of other tasks that are desired to be executed in parallel.
+   Tries to execute that payload in parallel, whilst blocking the current thread
+   until they finish.
+   Returns a `Result` of that execution."
+  {:added "1.0.0"}
+  [task]
   (is-task? task "execute-par")
   (letfn [(recoverable? [tasks] (and (some broken? tasks) (.recovery task)))
           (recover [tasks] (halfling.task/task ((.recovery task) (filter broken? tasks))))]
@@ -130,73 +191,160 @@
         (fail "One or more tasks have failed")
         :else (recur tasks)))))
 
-(defn success [value] (pure (succeed value)))
-(defn failure [message] (pure (fail message)))
+(defn success
+  "Returns a realised successful task containing the given `value`"
+  {:added "1.0.0"}
+  [value] (pure (succeed value)))
 
-(defn done? [task]
-  (is-task? task "done?")
+(defn failure
+  "Returns a realised failed task containing an error with the given `message`"
+  {:added "1.0.0"}
+  [message] (pure (fail message)))
+
+(defn done?
+  "Returns `true` if `task` has been realised, `false` otherwise.
+   Note: Doesn't check if the task has been run.
+   An unrun task is still considered to be realised.
+   For both checks, take a look at `executed?`."
+  {:added "1.0.0"}
+  [task] (is-task? task "done?")
   (realized? (.future task)))
 
-(defn spent? [task]
-  (is-task? task "spent?")
+(defn executed?
+  "Returns `true` if `task` has been realised and run, `false` otherwise."
+  {:added "1.0.0"}
+  [task] (is-task? task "executed?")
   (and (done? task)
        (empty? (.actions task))))
 
-(defn fulfilled? [task]
-  (is-task? task "fulfilled?")
+(defn fulfilled?
+  "Returns `true` if `task` has been realised and was successful, `false` otherwise.
+   Note: Doesn't check if a task has been run.
+   An unrun task is still considered to be realised."
+  {:added "1.0.0"}
+  [task] (is-task? task "fulfilled?")
   (and (done? task)
        (success? (peer task))))
 
-(defn broken? [task]
-  (is-task? task "broken?")
+(defn broken?
+  "Returns `true` if `task` has been realised and failed, `false` otherwise.
+   Note: Doesn't check if a task has been run.
+   An unrun task is still considered to be realised."
+  {:added "1.0.0"}
+  [task] (is-task? task "broken?")
   (and (done? task)
        (fail? (peer task))))
 
-(defn wait [task]
-  (is-task? task "wait")
+(defn wait
+  "Blocks thread until `task` has been realised."
+  {:added "1.0.0"}
+  [task] (is-task? task "wait")
   (remap task {:future #(const-future @%)}))
 
-(defn then [task f]
-  (is-task? task "then")
+(defn then
+  "Lazily applies a function `f` on the value of `task` only
+   in case it is successful. `f` is allowed to return both simple
+   values or other tasks.
+   The following law applies:
+    (then (task 1) #(inc %)) == (then (task 1) #(task (inc %))"
+  {:added "1.0.0"}
+  [task f] (is-task? task "then")
   (remap task {:actions #(conj % f)}))
 
-(defmacro then-do [task & body]
+(defmacro then-do
+  "A version of `then` where the result of `task` is ignored.
+   Lazily runs the `body` after the `task` ignoring the `task`s return.
+   Mainly thought for sequential side-effects.
+   The following law applies:
+    (-> (task 1) (then-do (println 12))) == (do-tasks [_ (task 1) _ (println 12)])"
+  {:added "1.0.0"}
+  [task & body]
   `(then ~task (fn [x#] (do ~@body))))
 
-(defn recover [task f]
-  (is-task? task "recover")
+(defn recover
+  "Recovers a failed `task` with function `f`.
+   `f` receives the failure and may either return a simple value
+   or another task.
+   Note: In case of tasks composed run in parallel and composed together
+   using `mapply`, `zip` or `sequenced`, the argument to `f` is a collection
+   of all failures."
+  {:added "1.0.0"}
+  [task f] (is-task? task "recover")
   (remap task {:recovery f}))
 
-(defn get! [task]
-  (is-task? task "get!")
-  (-> (wait task) (.future) (deref) (:value)))
-
-(defn peer [task]
-  (is-task? task "peer")
+(defn peer
+  "Returns the `Result` of `task`, which contains the value and whether
+   it was successful or not. Blocks `task` until the task is realised.
+   If you want the concrete value of `Result`, see `get!`.
+   Note: Doesn't run the task!"
+  {:added "1.0.0"}
+  [task] (is-task? task "peer")
   @(.future task))
 
-(defn get-or-else [task else]
-  (is-task? task "get-or-else")
+(defn get!
+  "Returns the value of the `Result` of `task`. Blocks `task` until it is realised.
+   If `task` is successful, returns its value. If it is failed, returns the error map.
+   Note: Doesn't run the task!"
+  {:added "1.0.0"}
+  [task] (is-task? task "get!")
+  (-> (wait task) (.future) (deref) (:value)))
+
+(defn get-or-else
+  "Returns the value of the `Result` of `task` if it was successful,
+   returns `else` otherwise. Block `task` until it is realised.
+   Note: Doesn't run the task!"
+  {:added "1.0.0"}
+  [task else] (is-task? task "get-or-else")
   (let [result (-> (wait task) (.future) (deref))]
     (if (fail? result) else (:value result))))
 
-(defn mapply [f & tasks]
-  (all-tasks? tasks "mapply")
+(defn mapply
+  "Takes all the values of `tasks` and lazily applies a function `f` on them if they were successful.
+   If one task fails, the total result will be a failure.
+   `tasks` will be run in parallel.
+   `f` is allowed to return both simple values and other tasks.
+   The arity of `f` is equal to the amount of `tasks`.
+   The following law applies:
+    (arity f) == (count tasks)"
+  {:added "1.0.0"}
+  [f & tasks] (all-tasks? tasks "mapply")
   (-> (vec tasks) (succeed) (pure) (then f) (remap {:exec parallel})))
 
-(defn zip [& tasks]
-  (all-tasks? tasks "zip")
+(defn zip
+  "Takes the values of `tasks` and aggregates them to a vector if they were successful.
+   If one task fails, the total result will be a failure.
+   `tasks` will be run in parallel."
+  {:added "1.0.0"}
+  [& tasks] (all-tasks? tasks "zip")
   (apply (partial mapply vector) tasks))
 
-(defn sequenced [tasks]
-  (all-tasks? tasks "sequenced")
+(defn sequenced
+  "Takes a collection of tasks and lazily transforms it in a task containing
+   a collection of all the values of those tasks.
+   If one task fails, the total result will be a failure.
+   `tasks` will be run in parallel."
+  {:added "1.0.0"}
+  [tasks] (all-tasks? tasks "sequenced")
   (let [inside-out (apply zip tasks)]
     (cond
       (set? tasks) (then inside-out set)
       (list? tasks) (then inside-out list)
       :else inside-out)))
 
-(defmacro do-tasks [bindings & body]
+(defmacro do-tasks
+  "A `let`-like construct that allows working with
+  tasks as if they were successfully realised.
+  Binds single tasks to names in a `let`-like fashion and
+  considers the names as being the realised values of those tasks.
+  In addition, it also supports non-task expressions. These will
+  automatically be lifted to a `task`.
+  Example:
+   (do-tasks [a (task 1)
+              _ (println a)
+              b (task 2)]
+    (+ a b)"
+  {:added "1.0.0"}
+  [bindings & body]
   (->> (destructure bindings)
        (partition 2)
        (reverse)
@@ -204,15 +352,24 @@
          (fn [expr [name# binding#]]
            `(then (task ~binding#) (fn [~name#] ~expr))) (cons 'do body))))
 
-(defn run [task]
-  (is-task? task "run")
+(defn run
+  "Runs `task` synchronously.
+   Returns another task containing the result of that execution.
+   Note: Parallel tasks will be run in parallel,
+   but the current thread will be blocked until all tasks realise."
+  {:added "1.0.0"}
+  [task] (is-task? task "run")
   (let [execution (.exec task)]
     (if (= serial execution)
       (pure (execute task))
       (pure (execute-par task)))))
 
-(defn run-async [task]
-  (is-task? task "run-async")
+(defn run-async
+  "Runs `task` asynchronously.
+   Returns another task containing the result of that execution.
+   Note: Parallel tasks will be run asynchronously in parallel."
+  {:added "1.0.0"}
+  [task] (is-task? task "run-async")
   (let [execution (.exec task)]
     (if (= serial execution)
       (purely (future (execute task)))
