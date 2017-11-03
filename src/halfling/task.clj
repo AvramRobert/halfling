@@ -27,8 +27,8 @@
 
 (defrecord Result [status value])
 
-(def ^:private ^:const serial :serial)
-(def ^:private ^:const parallel :parallel)
+(def ^:const serial :serial)
+(def ^:const parallel :parallel)
 
 (def ^:private ^:const successful :success)
 (def ^:private ^:const failed :failed)
@@ -238,8 +238,10 @@
 (defn wait
   "Blocks thread until `task` has been realised."
   {:added "1.0.0"}
-  [task] (is-task? task "wait")
-  (remap task {:future #(const-future @%)}))
+  ([task] (is-task? task "wait")
+   (remap task {:future #(const-future @%)}))
+  ([task timeout else] (is-task? task "wait")
+   (remap task {:future #(const-future (deref % timeout else))})))
 
 (defn then
   "Lazily applies a function `f` on the value of `task` only
