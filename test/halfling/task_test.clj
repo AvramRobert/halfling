@@ -82,6 +82,9 @@
         delta (/ (- s1 s0) 1000000.0)]
     (is (>= delta max-ms))))
 
+(defn timeoutable [tsk timeout else]
+  (is (= (get! (wait (run-async tsk) timeout else)) else)))
+
 (defn consistent [tsk expected]
   (let [result (extract! (wait (run tsk)))]
     (is (= result expected))))
@@ -93,6 +96,7 @@
                   tsk (task (Thread/sleep duration) (inc int))]
               (asynchronous tsk duration)
               (waitable tsk duration)
+              (timeoutable tsk 10 -1)
               (consistent tsk (inc int)))))
 
 ;; V. Comprehension

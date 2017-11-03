@@ -12,8 +12,8 @@ tools for working with them.
 <b>A word of caution:</b> this library is in its infancy.  <br />
 [![Clojars Project](https://img.shields.io/clojars/v/halfling.svg)](https://clojars.org/halfling)
 ## Usage     
-The main abstraction in halfling is something called a `Task`. 
-`Task` is essentially a wrapper around Clojure's `future`.
+The main abstraction in halfling is something called a `Task`. <br />
+`Task` is essentially a fancy wrapper around Clojure's `future`.
 
 ### Tasks
 Let's create some tasks: <br />
@@ -60,7 +60,7 @@ This type of execution will naturally block the current thread until the tasks f
 Running a task asynchronously will not block the current thread and return immediately.
 The task itself captures a promise which will eventually be filled with the result of that execution.
 
-<b>Note:</b> `wait` can be used to block and wait on an asynchronous execution.
+<b>Note:</b> `wait` can be used to block explicitly.
 
 ### Task values
 In some cases, you may want to retrieve the actual inner value of a task.
@@ -75,7 +75,7 @@ This can be achieved with `get!` and it can return one of two things:
 * If a task failed, it will return a map containing a failure message and a possible stack trace:
 ```clojure
 { :message <some string message>
-  :trace   <vector of stack elements> }
+  :trace   <vector of stacktrace elements> }
 ```
 
 There's a separate `get-or-else` function, which will return the value in
@@ -139,11 +139,11 @@ Additionally, the callback function can either return a simple value or another 
 > (t/get! (t/run crucial-maths))
 => 2
 ```
-By the magic of referential transparency, this leads to the same outcome as before.
+By the magic of referential transparency, this leads to the same outcome.
 
 ### Composition after execution
-Tasks maintain composability after execution. They return other tasks which contain
-the result of those executions. However, because they are computed lazily, it means that if you've
+Tasks maintain composability after execution. Every time they get run, they return new tasks
+containing the (possibly) future results. However, because they are computed lazily, it means that if you've
 executed a task and composed new things into it, you'll have to execute it again in order to force the compositions.
 
 Example:
@@ -158,7 +158,7 @@ Example:
 If additional compositions are made after or while it's executing, these shall remain un-executed until another
 call to either `run-async` or `run` is made:
 ```Clojure
-> (r/get! (t/run crucial-math))
+> (t/get! (t/run crucial-math))
 => 2
 ```
 
@@ -196,14 +196,65 @@ interdependent tasks. For this there is `do-tasks`:
 With this, you can use binding-forms to treat task
 values as if they were realized, and use them in that local context.
 `do-tasks` accepts both simple values and other tasks. It automatically "promotes"
-simple values to tasks in order to work with them. <b>Note:</b> `do-tasks` essentially
-desugars to nested `then`-calls, which means that the binding-forms are <i>serialised</i>. 
+simple values to tasks in order to work with them.
+
+<b>Note:</b> `do-tasks` essentially desugars to nested `then`-calls,
+which means that the binding-forms are <i>serialised</i>.
 
 ### Parallelism
-Halfing supports parallel execution with the functions `mapply`, `zip` and
-`sequenced` (see `halfing.task`). Additionally, there is also a `p-map` implementation available (see `halfling.lib`),
-which uses the task API. This, similar to Clojure's `pmap`, should only be used when the computation
-performed outweighs the distribution overhead. An example usage: 
+Halfing supports parallel execution with the functions:
+
+ * `mapply` - given any number of tasks and a function of arity equal to that number,
+   will call that function with all the values of those tasks if they are successful:
+
+```clojure
+> (def task1 (t/task 1))
+=> #'halfling.task/task1
+
+> (def task2 (t/task 2))
+=> #'halfling.task/task2
+
+> (def task3 (t/task 3))
+=> #'halfling.task/task3
+
+> (-> (t/mapply (fn [a b c] (+ a b c)) task1 task2 task3) ; task1, task2, task3 executed in parallel
+      (t/run)
+      (t/get!))
+=> 6
+```
+
+ * `zip` - takes any number of tasks and returns a task, which, in case of success, aggregates their values
+   in a vector:
+
+```clojure
+> (-> (t/zip task1 task2 task3) ; task1, task2, task3 executed in parallel
+      (t/run)
+      (t/get!)
+=> [1 2 3]
+```
+
+ * `sequenced` - takes a collection of tasks and returns a task, which, in case of success, aggregates the values of
+   those tasks in the same type of collection:
+
+```clojure
+> (-> (t/sequenced #{task1 task2 task3}) ; task1, task2, task3 executed in parallel
+      (t/run)
+      (t/get!))
+=> #{1 2 3}
+```
+See `halfing.task` for more information.
+
+
+#### Library functions
+As of version `1.0.0` halfling has a separate namespace called `lib`, which contains
+different types of library functions that use the `task` API in their implementation.
+
+Current functions:
+ * `p-map` - just like `map` but returns a task, which applies the function in parallel.
+ Similarly to Clojure's `pmap`, should only be used when the computation performed outweighs
+ the distribution overhead.
+
+ An example usage:
 ```clojure
 > (require '[halfling.lib :refer [p-map]])
 => nil
@@ -211,6 +262,11 @@ performed outweighs the distribution overhead. An example usage:
 > (defn letters [start-char]
    (iterate (comp char inc int) start-char))
 => #'user/letters
+
+> (def alph (vec (concat
+                   (take 26 (letters \A))
+                   (take 26 (letters \a)))))
+=> #'user/alph
 
 > (defn rand-str [n]
    (->> (range 0 n)
@@ -223,7 +279,8 @@ performed outweighs the distribution overhead. An example usage:
         (map (fn [_] (rand-str n)))))
 => #'user/strings
 
-> (def work (p-map clojure.string/lower-case (strings 4000 1000)))
+> (def work (->> (strings 4000 1000)
+                 (p-map clojure.string/lower-case)))
 => #'user/work
 
 > (time (do (t/run work) ()))

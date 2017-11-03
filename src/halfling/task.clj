@@ -241,7 +241,7 @@
   ([task] (is-task? task "wait")
    (remap task {:future #(const-future @%)}))
   ([task timeout else] (is-task? task "wait")
-   (remap task {:future #(const-future (deref % timeout else))})))
+   (remap task {:future #(const-future (deref % timeout (succeed else)))})))
 
 (defn then
   "Lazily applies a function `f` on the value of `task` only
