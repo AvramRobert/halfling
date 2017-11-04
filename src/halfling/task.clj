@@ -171,7 +171,7 @@
              value  :value} result
             recover (.recovery task)]
         (cond
-          (recoverable? result) (execute (halfling.task/task (recover result)))
+          (recoverable? result) (execute (halfling.task/task (recover value)))
           (fail? result) result
           (task? value) (recur (execute value) actions)
           (nil? f) result
@@ -186,21 +186,22 @@
   {:added "1.0.0"}
   [task] (is-task? task "execute-par")
   (letfn [(recoverable? [tasks] (and (some broken? tasks) (.recovery task)))
-          (recover [tasks] (halfling.task/task ((.recovery task) (filter broken? tasks))))]
+          (recover [tasks] (halfling.task/task ((.recovery task) (->> tasks (filter broken?) (mapv get!)))))]
     (loop [tasks (mapv run-async (get! task))]
-      (cond
-        (every? fulfilled? tasks)
-        (let [[gather & actions] (.actions task)]
-          (as-> tasks all
-                (mapv get! all)
-                (apply gather all)
-                (pure (succeed all))
-                (remap all {:actions (constantly actions)})
-                (execute all)))
-        (recoverable? tasks) (execute (recover tasks))
-        (some broken? tasks)
-        (fail "One or more tasks have failed")
-        :else (recur tasks)))))
+      (if (every? done? tasks)
+        (cond
+          (every? fulfilled? tasks)
+          (let [[gather & actions] (.actions task)]
+            (as-> tasks all
+                  (mapv get! all)
+                  (apply gather all)
+                  (pure (succeed all))
+                  (remap all {:actions (constantly actions)})
+                  (run all)
+                  (peer all)))
+          (recoverable? tasks) (peer (run (recover tasks)))
+          :else (fail "One or more tasks have failed"))
+        (recur tasks)))))
 
 (defn success
   "Returns a realised successful task containing the given `value`"
