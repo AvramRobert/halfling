@@ -85,6 +85,9 @@
 (defn timeoutable [tsk timeout else]
   (is (= (get! (wait (run-async tsk) timeout else)) else)))
 
+(defn derefable [tsk expected]
+  (is (= @(run tsk) expected)))
+
 (defn consistent [tsk expected]
   (let [result (extract! (wait (run tsk)))]
     (is (= result expected))))
@@ -97,6 +100,7 @@
               (asynchronous tsk duration)
               (waitable tsk duration)
               (timeoutable tsk 10 -1)
+              (derefable tsk (inc int))
               (consistent tsk (inc int)))))
 
 ;; V. Comprehension

@@ -1,6 +1,7 @@
 (ns halfling.task
   (import (clojure.lang IMeta IPending IBlockingDeref IDeref)
-          (java.util.concurrent Future)))
+          (java.util.concurrent Future)
+          (java.io Writer)))
 
 (declare task
          run
@@ -22,16 +23,29 @@
          execute-par
          remap)
 
-(deftype Task [exec future actions recovery]
-  IMeta (meta [_] {:type Task}))
-
-(defrecord Result [status value])
-
 (def ^:const serial :serial)
 (def ^:const parallel :parallel)
 
 (def ^:private ^:const successful :success)
 (def ^:private ^:const failed :failed)
+
+(deftype Task [exec future actions recovery]
+  IMeta (meta [_] {:type Task})
+  IDeref (deref [this] (get! this))
+  IBlockingDeref (deref [this timeout else] (get! this timeout else)))
+
+(defmethod print-method Task [tsk ^Writer writer]
+  (letfn [(write! [status value]
+            (.write writer (str "#Task"
+                                {:executed? (executed? tsk)
+                                 :status    status
+                                 :value     value})))]
+    (cond
+      (fulfilled? tsk) (write! successful (get! tsk))
+      (broken? tsk) (write! failed (get! tsk))
+      :else (write! :pending nil))))
+
+(defrecord Result [status value])
 
 (defn- is-task? [task fn]
   (assert (task? task) (str "Input to `" fn "` must be a `Task`")))
@@ -137,8 +151,7 @@
        :recovery a recovery function}
    Returns a new task containing the change specified in `map-f`."
   {:added "1.0.0"}
-  [task map-f]
-  (is-task? task "remap")
+  [task map-f] (is-task? task "remap")
   (let [f        (:future map-f identity)
         g        (:actions map-f identity)
         exec     (:exec map-f (.exec task))
@@ -149,8 +162,7 @@
   "Executes a `task` blockingly until it finishes.
    Returns a `Result` of that execution."
   {:added "1.0.0"}
-  [task]
-  (is-task? task "execute")
+  [task] (is-task? task "execute")
   (letfn [(recoverable? [result] (and (fail? result) (.recovery task)))]
     (loop [result  (peer task)
            actions (.actions task)]
@@ -172,8 +184,7 @@
    until they finish.
    Returns a `Result` of that execution."
   {:added "1.0.0"}
-  [task]
-  (is-task? task "execute-par")
+  [task] (is-task? task "execute-par")
   (letfn [(recoverable? [tasks] (and (some broken? tasks) (.recovery task)))
           (recover [tasks] (halfling.task/task ((.recovery task) (filter broken? tasks))))]
     (loop [tasks (mapv run-async (get! task))]
@@ -288,17 +299,22 @@
    If `task` is successful, returns its value. If it is failed, returns the error map.
    Note: Doesn't run the task!"
   {:added "1.0.0"}
-  [task] (is-task? task "get!")
-  (-> (wait task) (.future) (deref) (:value)))
+  ([task] (is-task? task "get!")
+   (-> (wait task) (.future) (deref) (:value)))
+  ([task timeout else] (is-task? task "get!")
+   (-> (wait task timeout else) (.future) (deref) (:value))))
 
 (defn get-or-else
   "Returns the value of the `Result` of `task` if it was successful,
    returns `else` otherwise. Block `task` until it is realised.
    Note: Doesn't run the task!"
   {:added "1.0.0"}
-  [task else] (is-task? task "get-or-else")
-  (let [result (-> (wait task) (.future) (deref))]
-    (if (fail? result) else (:value result))))
+  ([task else] (is-task? task "get-or-else")
+   (let [result (-> (wait task) (.future) (deref))]
+     (if (fail? result) else (:value result))))
+  ([task timeout else] (is-task? task "get-or-else")
+   (let [result (-> (wait task timeout else) (.future) (deref))]
+     (if (fail? result) else (:value result)))))
 
 (defn mapply
   "Takes all the values of `tasks` and lazily applies a function `f` on them if they were successful.

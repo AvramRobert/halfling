@@ -9,7 +9,6 @@ degree of laziness. This library attempts to provide these characteristics, plus
 tools for working with them.
 
 ## Clojars
-<b>A word of caution:</b> this library is in its infancy.  <br />
 [![Clojars Project](https://img.shields.io/clojars/v/halfling.svg)](https://clojars.org/halfling)
 ## Usage     
 The main abstraction in halfling is something called a `Task`. <br />
@@ -44,32 +43,34 @@ synchronously or asynchronously.
 The invariant is that running a task will always return another task, which contains the result of that execution.
 This can be subsequently manipulated and composed with other tasks.
 
-
 ### Synchronous execution
 ```Clojure
 > (t/run adding)
-=> #object[halfling.task.Task 0x5bbeab6c "halfling.task.Task@5bbeab6c"]
+=> #Task{:executed? true, :status :success, :value 2}
 ```
 This type of execution will naturally block the current thread until the tasks finishes.
 
 ### Asynchronous execution
 ```Clojure
-> (def added (t/run-async adding))
-=> #'user/added
+> (t/run-async adding)
+=> #Task{:executed? false, :status :pending, :value nil}
 ```
 Running a task asynchronously will not block the current thread and return immediately.
 The task itself captures a promise which will eventually be filled with the result of that execution.
 
-<b>Note:</b> `wait` can be used to block explicitly.
+**Note**: `wait` can be used to block explicitly.
 
 ### Task values
 In some cases, you may want to retrieve the actual inner value of a task.
 
-This can be achieved with `get!` and it can return one of two things:
+This can be achieved either with `get!`, `deref` or `@` and these can return one of two things:
 
-* If a task succeeded, it will return the concrete value of an execution:
+* If a task succeeded, it will return the concrete value of that execution:
 ```clojure
-> (t/get! added)
+> (t/get! (t/run adding))
+=> 2
+
+> @(t/run adding)
 => 2
 ```
 * If a task failed, it will return a map containing a failure message and a possible stack trace:
@@ -91,6 +92,8 @@ case of a success, or a provided `else` alternative in case of failure:
       (t/get-or-else -1))
 => -1
 ```
+
+**Note:** All of these will **block** an asynchronously executing task.
 
 ### Task results
 Every task actually wraps something called a `Result`, which indicates the outcome
@@ -117,6 +120,19 @@ If you desire to actually look at the result of an execution, you may do so with
 ```
 `get!` actually extracts the `:value` of a `Result`.
 
+### Task status
+There are a number of functions that check different versions of a task's status:
+
+* `done?` - checks if a task has been **realised**
+* `executed?` - checks if a task has been **run** and **realised**
+* `fulfilled?` - checks if a task has been **realised** and was **successful**
+* `broken?` - checks if a task has been **realised** but **failed**
+
+In addition, you can create finished successful or failed tasks with:
+
+* `success` -  given any value, returns a realised successful task containing that value
+* `failure` - given a string message, returns a realised failed task with that message as an error
+
 ### Composing tasks
 Tasks can be composed by using the `then` primitive. This takes a
 task and some sort of callback function, and returns a new task:
@@ -126,7 +142,7 @@ task and some sort of callback function, and returns a new task:
                          (t/then dec)))
 => #'user/crucial-maths
 
-> (t/get! (t/run crucial-maths))
+> @(t/run crucial-maths)
 => 2
 ```
 Additionally, the callback function can either return a simple value or another task:
@@ -136,15 +152,15 @@ Additionally, the callback function can either return a simple value or another 
                          (t/then dec)))
 => #'user/crucial-maths
 
-> (t/get! (t/run crucial-maths))
+> @(t/run crucial-maths)
 => 2
 ```
 By the magic of referential transparency, this leads to the same outcome.
 
 ### Composition after execution
 Tasks maintain composability after execution. Every time they get run, they return new tasks
-containing the (possibly) future results. However, because they are computed lazily, it means that if you've
-executed a task and composed new things into it, you'll have to execute it again in order to force the compositions.
+containing the future results. Because tasks are lazy, once you've run a task and
+afterwards composed new things into it, you'll have to run it again in order to force the new compositions.
 
 Example:
 ```Clojure
@@ -158,19 +174,18 @@ Example:
 If additional compositions are made after or while it's executing, these shall remain un-executed until another
 call to either `run-async` or `run` is made:
 ```Clojure
-> (t/get! (t/run crucial-math))
+> @(t/run crucial-math)
 => 2
 ```
-
+The task will then pick-up where it's left off and execute the remaining changes.
 ### Chaining effects
 You can chain task effects by using the `then-do` macro.
 `then-do` sequentially composes effects into one task:
 ```clojure
-> (-> (t/task (println "Launching missiles!"))
-      (t/then-do (println "Missiles launched!"))
-      (t/then-do (println "Death is imminent!"))
-      (t/run)
-      (t/get!)
+> @(-> (t/task (println "Launching missiles!"))
+       (t/then-do (println "Missiles launched!"))
+       (t/then-do (println "Death is imminent!"))
+       (t/run))
 
 Launching missiles!
 Missiles launched!
@@ -190,7 +205,7 @@ interdependent tasks. For this there is `do-tasks`:
                   (+ a (- b1 b2))))
 => #'user/crucial-maths
 
-> (t/get! (t/run crucial-maths))
+> @(t/run crucial-maths)
 => 4
 ```
 With this, you can use binding-forms to treat task
@@ -217,9 +232,7 @@ Halfing supports parallel execution with the functions:
 > (def task3 (t/task 3))
 => #'halfling.task/task3
 
-> (-> (t/mapply (fn [a b c] (+ a b c)) task1 task2 task3) ; task1, task2, task3 executed in parallel
-      (t/run)
-      (t/get!))
+> @(t/run (t/mapply (fn [a b c] (+ a b c)) task1 task2 task3)) ; task1, task2, task3 executed in parallel
 => 6
 ```
 
@@ -227,9 +240,7 @@ Halfing supports parallel execution with the functions:
    in a vector:
 
 ```clojure
-> (-> (t/zip task1 task2 task3) ; task1, task2, task3 executed in parallel
-      (t/run)
-      (t/get!)
+> @(t/run (t/zip task1 task2 task3)) ; task1, task2, task3 executed in parallel
 => [1 2 3]
 ```
 
@@ -237,13 +248,11 @@ Halfing supports parallel execution with the functions:
    those tasks in the same type of collection:
 
 ```clojure
-> (-> (t/sequenced #{task1 task2 task3}) ; task1, task2, task3 executed in parallel
-      (t/run)
-      (t/get!))
+> @(t/run (t/sequenced #{task1 task2 task3})) ; task1, task2, task3 executed in parallel
 => #{1 2 3}
 ```
-See `halfing.task` for more information.
 
+See `halfing.task` for more information.
 
 #### Library functions
 As of version `1.0.0` halfling has a separate namespace called `lib`, which contains
