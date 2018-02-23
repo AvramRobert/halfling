@@ -1,5 +1,5 @@
 (ns halfling.lib
-  (require [halfling.task :as t]))
+  (:require [halfling.task :as t]))
 
 (defn p-map
   "Applies a function `f` on all items of a collection `coll` in parallel.

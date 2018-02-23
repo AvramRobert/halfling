@@ -1,7 +1,7 @@
 (ns halfling.task
-  (import (clojure.lang IMeta IPending IBlockingDeref IDeref)
-          (java.util.concurrent Future)
-          (java.io Writer)))
+  (:import (clojure.lang IMeta IPending IBlockingDeref IDeref)
+           (java.util.concurrent Future)
+           (java.io Writer)))
 
 (declare task
          run

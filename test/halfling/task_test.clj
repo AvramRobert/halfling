@@ -1,9 +1,9 @@
 (ns halfling.task-test
-  (require [clojure.test :refer [is deftest]]
-           [clojure.test.check.generators :as gen]
-           [clojure.test.check.clojure-test :refer [defspec]]
-           [clojure.test.check.properties :refer [for-all]]
-           [halfling.task :refer :all]))
+  (:require [clojure.test :refer [is deftest]]
+            [clojure.test.check.generators :as gen]
+            [clojure.test.check.clojure-test :refer [defspec]]
+            [clojure.test.check.properties :refer [for-all]]
+            [halfling.task :refer :all]))
 
 (defn extract! [task] (get! (run task)))
 
