@@ -220,3 +220,17 @@
          (for-all [int gen/int
                    alt gen/string]
            (alternate (task int) alt)))
+
+;; X. Execution impartiality under composition
+
+(defn impartial-exec [val vals]
+  (is (= (-> (task val)
+             (then (fn [x] (->> vals (mapv #(task (+ x %))) (sequenced))))
+             (extract!))
+         (mapv #(+ val %) vals))))
+
+(defspec impartiality
+         100
+         (for-all [int gen/int
+                   other-ints (gen/vector gen/int)]
+                  (impartial-exec int other-ints)))

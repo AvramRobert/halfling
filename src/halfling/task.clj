@@ -102,7 +102,7 @@
   [value]
   (Result. successful value))
 
-(defn- fail?
+(defn- failure?
   "Returns `true` if `result` is failed, `false` otherwise."
   {:added "1.0.0"}
   [result]
@@ -163,16 +163,17 @@
    Returns a `Result` of that execution."
   {:added "1.0.0"}
   [task] (is-task? task "execute")
-  (letfn [(recoverable? [result] (and (fail? result) (.recovery task)))]
+  (letfn [(recoverable? [result] (and (failure? result) (.recovery task)))
+          (parallel-task? [tsk] (and (task? tsk) (= parallel (.exec tsk))))]
     (loop [result  (peer task)
            actions (.actions task)]
       (let [[f & fs] actions
-            {status :status
-             value  :value} result
+            value   (:value result)
             recover (.recovery task)]
         (cond
           (recoverable? result) (execute (halfling.task/task (recover value)))
-          (fail? result) result
+          (failure? result) result
+          (parallel-task? value) (recur (execute-par value) actions)
           (task? value) (recur (execute value) actions)
           (nil? f) result
           :else (recur (attempt (f value)) fs))))))
@@ -245,7 +246,7 @@
   {:added "1.0.0"}
   [task] (is-task? task "broken?")
   (and (done? task)
-       (fail? (peer task))))
+       (failure? (peer task))))
 
 (defn wait
   "Blocks thread until `task` has been realised."
@@ -312,10 +313,10 @@
   {:added "1.0.0"}
   ([task else] (is-task? task "get-or-else")
    (let [result (-> (wait task) (.future) (deref))]
-     (if (fail? result) else (:value result))))
+     (if (failure? result) else (:value result))))
   ([task timeout else] (is-task? task "get-or-else")
    (let [result (-> (wait task timeout else) (.future) (deref))]
-     (if (fail? result) else (:value result)))))
+     (if (failure? result) else (:value result)))))
 
 (defn mapply
   "Takes all the values of `tasks` and lazily applies a function `f` on them if they were successful.
