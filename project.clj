@@ -1,4 +1,4 @@
-(defproject halfling "1.1.1"
+(defproject halfling "1.2.0"
   :description "A simple library for composing asynchronous actions"
   :url "http://example.com/FIXME"
   :license {:name "MIT"

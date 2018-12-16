@@ -127,7 +127,7 @@
              :trace   <possible stack trace>}"
   {:added "1.0.0"}
   [& body]
-  `(try (succeed ~@body)
+  `(try (succeed (do ~@body))
         (catch Exception e#
           (fail (.toString e#) (vec (.getStackTrace e#))))))
 
@@ -151,7 +151,7 @@
        :recovery a recovery function}
    Returns a new task containing the change specified in `map-f`."
   {:added "1.0.0"}
-  [task map-f] (is-task? task "remap")
+  [map-f ^Task task] (is-task? task "remap")
   (let [f        (:future map-f identity)
         g        (:actions map-f identity)
         exec     (:exec map-f (.exec task))
@@ -162,7 +162,7 @@
   "Executes a `task` blockingly until it finishes.
    Returns a `Result` of that execution."
   {:added "1.0.0"}
-  [task] (is-task? task "execute")
+  [^Task task] (is-task? task "execute")
   (letfn [(recoverable? [result] (and (failure? result) (.recovery task)))
           (parallel-task? [tsk] (and (task? tsk) (= parallel (.exec tsk))))]
     (loop [result  (peer task)
@@ -180,29 +180,29 @@
 
 (defn- execute-par
   "A `task` executed by `execute-par` will contain as payload a collection
-   of other tasks that are desired to be executed in parallel.
+   of other tasks that are to be executed in parallel.
    Tries to execute that payload in parallel, whilst blocking the current thread
    until they finish.
    Returns a `Result` of that execution."
   {:added "1.0.0"}
-  [task] (is-task? task "execute-par")
+  [^Task task] (is-task? task "execute-par")
   (letfn [(recoverable? [tasks] (and (some broken? tasks) (.recovery task)))
           (recover [tasks] (halfling.task/task ((.recovery task) (->> tasks (filter broken?) (mapv get!)))))]
-    (loop [tasks (mapv run-async (get! task))]
-      (if (every? done? tasks)
-        (cond
-          (every? fulfilled? tasks)
-          (let [[gather & actions] (.actions task)]
-            (as-> tasks all
-                  (mapv get! all)
-                  (apply gather all)
-                  (pure (succeed all))
-                  (remap all {:actions (constantly actions)})
-                  (run all)
-                  (peer all)))
-          (recoverable? tasks) (peer (run (recover tasks)))
-          :else (fail "One or more tasks have failed"))
-        (recur tasks)))))
+    (let [[compose & actions] (.actions task)
+          tasks (->> (get! task)
+                     (mapv run-async)
+                     (mapv wait))]
+      (cond (every? fulfilled? tasks)
+            (->> tasks
+                 (mapv get!)
+                 (apply compose)
+                 (succeed)
+                 (pure)
+                 (remap {:actions (constantly actions)})
+                 (run)
+                 (peer))
+            (recoverable? tasks) (peer (run (recover tasks)))
+            :else (fail "One or more tasks have failed" (->> tasks (filter broken?) (mapcat (comp :trace get!))))))))
 
 (defn success
   "Returns a realised successful task containing the given `value`"
@@ -217,16 +217,16 @@
 (defn done?
   "Returns `true` if `task` has been realised, `false` otherwise.
    Note: Doesn't check if the task has been run.
-   An unrun task is still considered to be realised.
+   An un-run task is still considered to be realised.
    For both checks, take a look at `executed?`."
   {:added "1.0.0"}
-  [task] (is-task? task "done?")
+  [^Task task] (is-task? task "done?")
   (realized? (.future task)))
 
 (defn executed?
   "Returns `true` if `task` has been realised and run, `false` otherwise."
   {:added "1.0.0"}
-  [task] (is-task? task "executed?")
+  [^Task task] (is-task? task "executed?")
   (and (done? task)
        (empty? (.actions task))))
 
@@ -235,26 +235,26 @@
    Note: Doesn't check if a task has been run.
    An unrun task is still considered to be realised."
   {:added "1.0.0"}
-  [task] (is-task? task "fulfilled?")
+  [^Task task] (is-task? task "fulfilled?")
   (and (done? task)
        (success? (peer task))))
 
 (defn broken?
   "Returns `true` if `task` has been realised and failed, `false` otherwise.
    Note: Doesn't check if a task has been run.
-   An unrun task is still considered to be realised."
+   An un-run task is still considered to be realised."
   {:added "1.0.0"}
-  [task] (is-task? task "broken?")
+  [^Task task] (is-task? task "broken?")
   (and (done? task)
        (failure? (peer task))))
 
 (defn wait
   "Blocks thread until `task` has been realised."
   {:added "1.0.0"}
-  ([task] (is-task? task "wait")
-   (remap task {:future #(const-future @%)}))
-  ([task timeout else] (is-task? task "wait")
-   (remap task {:future #(const-future (deref % timeout (succeed else)))})))
+  ([^Task task] (is-task? task "wait")
+   (remap {:future #(const-future @%)} task))
+  ([^Task task timeout else] (is-task? task "wait")
+   (remap {:future #(const-future (deref % timeout (succeed else)))} task)))
 
 (defn then
   "Lazily applies a function `f` on the value of `task` only
@@ -263,8 +263,8 @@
    The following law applies:
     (then (task 1) #(inc %)) == (then (task 1) #(task (inc %))"
   {:added "1.0.0"}
-  [task f] (is-task? task "then")
-  (remap task {:actions #(conj % f)}))
+  [^Task task f] (is-task? task "then")
+  (remap {:actions #(conj % f)} task))
 
 (defmacro then-do
   "A version of `then` where the result of `task` is ignored.
@@ -273,7 +273,7 @@
    The following law applies:
     (-> (task 1) (then-do (println 12))) == (do-tasks [_ (task 1) _ (println 12)])"
   {:added "1.0.0"}
-  [task & body]
+  [^Task task & body]
   `(then ~task (fn [x#] (do ~@body))))
 
 (defn recover
@@ -284,8 +284,8 @@
    using `mapply`, `zip` or `sequenced`, the argument to `f` is a collection
    of all failures."
   {:added "1.0.0"}
-  [task f] (is-task? task "recover")
-  (remap task {:recovery f}))
+  [^Task task f] (is-task? task "recover")
+  (remap {:recovery f} task))
 
 (defn peer
   "Returns the `Result` of `task`, which contains the value and whether
@@ -293,7 +293,7 @@
    If you want the concrete value of `Result`, see `get!`.
    Note: Doesn't run the task!"
   {:added "1.0.0"}
-  [task] (is-task? task "peer")
+  [^Task task] (is-task? task "peer")
   @(.future task))
 
 (defn get!
@@ -301,9 +301,9 @@
    If `task` is successful, returns its value. If it is failed, returns the error map.
    Note: Doesn't run the task!"
   {:added "1.0.0"}
-  ([task] (is-task? task "get!")
+  ([^Task task] (is-task? task "get!")
    (-> (wait task) (.future) (deref) (:value)))
-  ([task timeout else] (is-task? task "get!")
+  ([^Task task timeout else] (is-task? task "get!")
    (-> (wait task timeout else) (.future) (deref) (:value))))
 
 (defn get-or-else
@@ -311,10 +311,10 @@
    returns `else` otherwise. Block `task` until it is realised.
    Note: Doesn't run the task!"
   {:added "1.0.0"}
-  ([task else] (is-task? task "get-or-else")
+  ([^Task task else] (is-task? task "get-or-else")
    (let [result (-> (wait task) (.future) (deref))]
      (if (failure? result) else (:value result))))
-  ([task timeout else] (is-task? task "get-or-else")
+  ([^Task task timeout else] (is-task? task "get-or-else")
    (let [result (-> (wait task timeout else) (.future) (deref))]
      (if (failure? result) else (:value result)))))
 
@@ -328,7 +328,7 @@
     (arity f) == (count tasks)"
   {:added "1.0.0"}
   [f & tasks] (all-tasks? tasks "mapply")
-  (-> (vec tasks) (succeed) (pure) (then f) (remap {:exec parallel})))
+  (remap {:exec parallel} (-> (vec tasks) (succeed) (pure) (then f))))
 
 (defn zip
   "Takes the values of `tasks` and aggregates them to a vector if they were successful.

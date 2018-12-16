@@ -297,6 +297,6 @@ Current functions:
 ```
 ## License
 
-Copyright © 2017 Robert Marius Avram
+Copyright © 2018 Robert Marius Avram
 
 Distributed under the MIT License.
