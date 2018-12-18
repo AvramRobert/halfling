@@ -1,6 +1,32 @@
 # Change Log
 All notable changes to this project will be documented in this file. This change log follows the conventions of [keepachangelog.com](http://keepachangelog.com/).
 
+### 1.2.0
+
+### Changed
+Failures have now been replaced with plain `Throwable` objects.
+The failure map format of previous versions (containg the message and a vector stack trace)
+has been deprecated and removed.
+
+Failed parallel tasks now contain a collection of all `Throwable` objects of all the tasks
+that failed during execution.
+
+### Removed
+Old representation of failures and errors.
+
+### 0.1.7 - 1.1.1
+### Changed
+`Result` is now hidden and contained within `Task`.
+Users need not manipulate it anymore.
+
+Its functionality has also been hidden away.
+
+`Task` has now been made completely compositional.
+Any task execution now returns a new task, that one may continue composing with other tasks.
+
+### Removed
+Public `Result` functionality.
+
 ### 0.1.6
 ### Changed
 `fold` in `Result` is now a macro to avoid unnecessary function calls

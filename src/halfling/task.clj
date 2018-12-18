@@ -84,17 +84,13 @@
 (defn- pure
   "Given a `Result`, returns a `task` containing it."
   {:added "1.0.0"}
-  [result] (purely (const-future result)))
+  [^Result result] (purely (const-future result)))
 
 (defn- fail
   "Returns a failed `Result`."
   {:added "1.0.0"}
-  ([message]
-   (fail message []))
-  ([message trace]
-   (Result. failed
-            {:message message
-             :trace   trace})))
+  [error]
+  (Result. failed error))
 
 (defn- succeed
   "Returns a successful `Result`."
@@ -105,41 +101,23 @@
 (defn- failure?
   "Returns `true` if `result` is failed, `false` otherwise."
   {:added "1.0.0"}
-  [result]
+  [^Result result]
   (= :failed (:status result)))
 
 (defn- success?
   "Returns `true` if `result` is successful, `false` otherwise."
   {:added "1.0.0"}
-  [result]
+  [^Result result]
   (= :success (:status result)))
 
-(defmacro attempt
-  "Safely runs a `body` in a `try` block
-   and captures its outcome in a `Result`.
-   In case of a success, the result will look like:
-   {:status :success
-    :value  <result of computation>}
-
-   In case of a failure, the result will look like:
-   {:status :failure
-    :value  {:message <message of failure>
-             :trace   <possible stack trace>}"
+(defn- peer
+  "Returns the `Result` of `task`, which contains the value and whether
+   it was successful or not. Blocks `task` until the task is realised.
+   If you want the concrete value of `Result`, see `get!`.
+   Note: Doesn't run the task!"
   {:added "1.0.0"}
-  [& body]
-  `(try (succeed (do ~@body))
-        (catch Exception e#
-          (fail (.toString e#) (vec (.getStackTrace e#))))))
-
-(defmacro task
-  "Takes and number of expressions or actions and
-   returns a task that will lazily evaluate them."
-  {:added "1.0.0"}
-  [& actions]
-  `(Task. serial
-          (const-future ~(succeed nil))
-          [(fn [x#] ~(cons 'do actions))]
-          nil))
+  [^Task task] (is-task? task "peer")
+  @(.future task))
 
 (defn- remap
   "Changes the attributes of `task` as specified by
@@ -157,6 +135,32 @@
         exec     (:exec map-f (.exec task))
         recovery (:recovery map-f (.recovery task))]
     (Task. exec (f (.future task)) (g (.actions task)) recovery)))
+
+(defmacro attempt
+  "Safely runs a `body` in a `try` block
+   and captures its outcome in a `Result`.
+   In case of a success, the result will look like:
+   {:status :success
+    :value  <result of computation>}
+
+   In case of a failure, the result will look like:
+   {:status :failure
+    :value  {:message <message of failure>
+             :trace   <possible stack trace>}"
+  {:added "1.0.0"}
+  [& body]
+  `(try (succeed (do ~@body))
+        (catch Exception e# (fail e#))))
+
+(defmacro task
+  "Takes and number of expressions or actions and
+   returns a task that will lazily evaluate them."
+  {:added "1.0.0"}
+  [& actions]
+  `(Task. serial
+          (const-future ~(succeed nil))
+          [(fn [x#] ~(cons 'do actions))]
+          nil))
 
 (defn- execute
   "Executes a `task` blockingly until it finishes.
@@ -202,17 +206,22 @@
                  (run)
                  (peer))
             (recoverable? tasks) (peer (run (recover tasks)))
-            :else (fail "One or more tasks have failed" (->> tasks (filter broken?) (mapcat (comp :trace get!))))))))
+            :else (fail (->> tasks (filter broken?) (map get!)))))))
 
 (defn success
-  "Returns a realised successful task containing the given `value`"
+  "Given some `value`, returns a realised successful task containing the given `value`"
   {:added "1.0.0"}
   [value] (pure (succeed value)))
 
 (defn failure
-  "Returns a realised failed task containing an error with the given `message`"
+  "Given some string `message`, returns a realised failed task containing an error with the given `message`"
   {:added "1.0.0"}
-  [message] (pure (fail message)))
+  [message] (pure (fail (Exception. message))))
+
+(defn failure-t
+  "Given a proper error `Throwable`, returns a realised failed task containing it."
+  {:added "1.2.0"}
+  [^Throwable throwable] (pure (fail throwable)))
 
 (defn done?
   "Returns `true` if `task` has been realised, `false` otherwise.
@@ -233,7 +242,7 @@
 (defn fulfilled?
   "Returns `true` if `task` has been realised and was successful, `false` otherwise.
    Note: Doesn't check if a task has been run.
-   An unrun task is still considered to be realised."
+   An un-run task is still considered to be realised."
   {:added "1.0.0"}
   [^Task task] (is-task? task "fulfilled?")
   (and (done? task)
@@ -278,27 +287,22 @@
 
 (defn recover
   "Recovers a failed `task` with function `f`.
-   `f` receives the failure and may either return a simple value
-   or another task.
-   Note: In case of tasks composed run in parallel and composed together
-   using `mapply`, `zip` or `sequenced`, the argument to `f` is a collection
-   of all failures."
+
+   NON-PARALLEL EXECUTION: `f` has a `Throwable` error object as an argument.
+   PARALLEL EXECUTION: `f` has a collection of `Throwable` error objects as an argument.
+
+   `f` may either return a simple value or another task.
+
+   Note: Tasks that are generally run in parallel are tasks composed together
+   using `mapply`, `zip` or `sequenced`."
   {:added "1.0.0"}
   [^Task task f] (is-task? task "recover")
   (remap {:recovery f} task))
 
-(defn peer
-  "Returns the `Result` of `task`, which contains the value and whether
-   it was successful or not. Blocks `task` until the task is realised.
-   If you want the concrete value of `Result`, see `get!`.
-   Note: Doesn't run the task!"
-  {:added "1.0.0"}
-  [^Task task] (is-task? task "peer")
-  @(.future task))
-
 (defn get!
   "Returns the value of the `Result` of `task`. Blocks `task` until it is realised.
-   If `task` is successful, returns its value. If it is failed, returns the error map.
+   If `task` is successful, returns its value.
+   If it is failed, returns the `Throwable` error object.
    Note: Doesn't run the task!"
   {:added "1.0.0"}
   ([^Task task] (is-task? task "get!")
@@ -319,13 +323,14 @@
      (if (failure? result) else (:value result)))))
 
 (defn mapply
-  "Takes all the values of `tasks` and lazily applies a function `f` on them if they were successful.
+  "Takes all the values of `tasks` and lazily applies a
+   function `f` on them if they were successful.
    If one task fails, the total result will be a failure.
    `tasks` will be run in parallel.
    `f` is allowed to return both simple values and other tasks.
    The arity of `f` is equal to the amount of `tasks`.
    The following law applies:
-    (arity f) == (count tasks)"
+   (arity f) == (count tasks)"
   {:added "1.0.0"}
   [f & tasks] (all-tasks? tasks "mapply")
   (remap {:exec parallel} (-> (vec tasks) (succeed) (pure) (then f))))
@@ -387,7 +392,7 @@
 (defn run-async
   "Runs `task` asynchronously.
    Returns another task containing the result of that execution.
-   Note: Parallel tasks will be run asynchronously in parallel."
+   Note: Returns immediately. Parallel tasks will be run in parallel."
   {:added "1.0.0"}
   [task] (is-task? task "run-async")
   (let [execution (.exec task)]

@@ -184,17 +184,16 @@
   (let [msg "Failed!"]
     (is (= (-> tsk
                (then-do (failure msg))
-               (recover :message)
+               (recover #(.getMessage %))
                (extract!)) msg))))
 
 (defn recovered-parallel-error [tsk1 tsk2 tsk3]
   (let [msg1 "Failed-1!"
         msg2 "Failed-2!"
-        tsk-e (as-> [(then-do tsk1 (failure msg1))
-                     (then-do tsk2 (failure msg2))
-                     tsk3] tasks
-                   (apply zip tasks)
-                   (recover tasks #(map :message %)))]
+        tsk-e (-> (zip tsk1
+                       (-> tsk2 (then-do (failure msg1)))
+                       (-> tsk3 (then-do (failure msg2))))
+                  (recover (fn [r] (map #(.getMessage %) r))))]
     (is (= (extract! tsk-e) [msg1 msg2]))))
 
 (defspec recoverability
