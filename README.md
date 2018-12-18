@@ -73,11 +73,27 @@ This can be achieved either with `get!`, `deref` or `@` and these can return one
 > @(t/run adding)
 => 2
 ```
-* If a task failed, it will return a map containing a failure message and a possible stack trace:
+* If a task failed during **NON-PARALLEL** execution, it will contain the `Throwable` object (or Exception) with which it failed
 ```clojure
-{ :message <some string message>
-  :trace   <vector of stacktrace elements> }
+#Task{:executed? true,
+      :status :failed,
+      :value #error{:cause "Something went wrong!",
+                    :via [...],
+                    :trace [...],
+                    }
 ```
+
+* If a task failed during **PARALLEL** execution, it will contain a collection of the `Throwable` objects of all the failed parallel executions
+```clojure
+#Task{:executed? true,
+      :status :failed,
+      :value [#error{:cause "Something went wrong!",
+                                  :via [...],
+                                  :trace [...],
+                                  }
+              ...]
+```
+
 
 There's a separate `get-or-else` function, which will return the value in
 case of a success, or a provided `else` alternative in case of failure:
@@ -95,31 +111,6 @@ case of a success, or a provided `else` alternative in case of failure:
 
 **Note:** All of these will **block** an asynchronously executing task.
 
-### Task results
-Every task actually wraps something called a `Result`, which indicates the outcome
-of an execution. Every `Result` has the following structure:
-
-* In case of successful execution:
-```clojure
-{ :status :success
-  :value  <result of execution> }
-```
-* In case of failed execution:
-```clojure
-{ :status :failed
-  :value  { :message <string error message>
-            :trace   <possible vector of stacktrace elements> } }
-```
-If you desire to actually look at the result of an execution, you may do so with `peer`:
-```clojure
-> (-> (t/task 1)
-      (t/run)
-      (t/peer))
-
-=> #halfling.task.Result{:status :success, :value 1}
-```
-`get!` actually extracts the `:value` of a `Result`.
-
 ### Task status
 There are a number of functions that check different versions of a task's status:
 
@@ -132,6 +123,7 @@ In addition, you can create finished successful or failed tasks with:
 
 * `success` -  given any value, returns a realised successful task containing that value
 * `failure` - given a string message, returns a realised failed task with that message as an error
+* `failure-t` - given a proper `Exception` or `Throwable` object, returns a realised failed task with that error
 
 ### Composing tasks
 Tasks can be composed by using the `then` primitive. This takes a
