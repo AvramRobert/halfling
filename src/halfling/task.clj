@@ -10,7 +10,6 @@
          mapply
          then
          recover
-         peer
          get!
          get-or-else
          fulfilled?
