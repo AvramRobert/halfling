@@ -63,7 +63,7 @@ The task itself captures a promise which will eventually be filled with the resu
 ### Task values
 In some cases, you may want to retrieve the actual inner value of a task.
 
-This can be achieved either with `get!`, `deref` or `@` and these can return one of two things:
+This can be achieved either with `get!`, `deref` or `@` and these can return one of three (and only three) things:
 
 * If a task succeeded, it will return the concrete value of that execution:
 ```clojure
@@ -83,7 +83,7 @@ This can be achieved either with `get!`, `deref` or `@` and these can return one
                     }
 ```
 
-* If a task failed during **PARALLEL** execution, it will contain a collection of the `Throwable` objects of all the failed parallel executions
+* If a task failed during **PARALLEL** execution, it will contain a **collection** of the `Throwable` objects of all the failed executions
 ```clojure
 #Task{:executed? true,
       :status :failed,
@@ -95,7 +95,7 @@ This can be achieved either with `get!`, `deref` or `@` and these can return one
 ```
 
 
-There's a separate `get-or-else` function, which will return the value in
+There's a separate `get-or-else` function, which will return either the value in
 case of a success, or a provided `else` alternative in case of failure:
 ```clojure
 > (-> (task 1)
@@ -158,20 +158,21 @@ Example:
 ```Clojure
 > (def crucial-math (-> (t/task (+ 1 1))
                         (t/then #(t/task (inc %)))
-                        (t/run-async) ;; <- (inc (+ 1 1))
+                        (t/run) ;; <- (inc (+ 1 1))
                         (t/then dec))) ;; <- unexecuted
 => #'user/crucial-math
 ```
-`run-async` will only execute those tasks that came before its invocation.
+In this case `run` (and also `run-async`) will only execute those tasks that came before its invocation.
 If additional compositions are made after or while it's executing, these shall remain un-executed until another
-call to either `run-async` or `run` is made:
+call to either `run` `run-async` is made:
 ```Clojure
 > @(t/run crucial-math)
 => 2
 ```
-The task will then pick-up where it's left off and execute the remaining changes.
-### Chaining effects
-You can chain task effects by using the `then-do` macro.
+The task will then pick up where it's left off and execute the remaining changes.
+### Fire-and-forget effects
+If you're not interested in the return value of some previous task,
+you can chain fire-and-forget-like task effects by using the `then-do` macro.
 `then-do` sequentially composes effects into one task:
 ```clojure
 > @(-> (t/task (println "Launching missiles!"))
@@ -184,11 +185,19 @@ Missiles launched!
 Death is imminent!
 => nil
 ```
-
+This is equivalent to:
+```clojure
+> @(-> (t/task (println "Launching missles!")
+       (t/task (fn [_] (println "Missiles launched!")))
+       (t/task (fn [_] (println "Death is imminent!")))
+       (t/run))
+```
 ### Task comprehension
 Whilst threading tasks from one to the other looks
-pretty, it isn't really that appropriate when working with
-interdependent tasks. For this there is `do-tasks`:
+pretty, it isn't particuarly suited for working with
+mutliple interdependent tasks.
+
+For this there is `do-tasks`:
 ```Clojure
 > (def crucial-maths 
       (t/do-tasks [a (t/task (+ 1 1))
