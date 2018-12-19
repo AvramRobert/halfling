@@ -164,7 +164,7 @@ Example:
 ```
 In this case `run` (and also `run-async`) will only execute those tasks that came before its invocation.
 If additional compositions are made after or while it's executing, these shall remain un-executed until another
-call to either `run` `run-async` is made:
+call to either `run` or `run-async` is made:
 ```Clojure
 > @(t/run crucial-math)
 => 2
