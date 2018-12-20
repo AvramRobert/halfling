@@ -144,8 +144,7 @@
 
    In case of a failure, the result will look like:
    {:status :failure
-    :value  {:message <message of failure>
-             :trace   <possible stack trace>}"
+    :value  <throwable/exception object>}"
   {:added "1.0.0"}
   [& body]
   `(try (succeed (do ~@body))
