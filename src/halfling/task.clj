@@ -140,15 +140,16 @@
    and captures its outcome in a `Result`.
    In case of a success, the result will look like:
    {:status :success
-    :value  <result of computation>}
+    :value  [<result of computation>]}
 
    In case of a failure, the result will look like:
    {:status :failure
-    :value  <throwable/exception object>}"
-  {:added "1.0.0"}
+    :value  [<throwable/exception object>]}"
+  {:added   "1.0.0"
+   :revised "1.3.0"}
   [& body]
   `(try (succeed (do ~@body))
-        (catch Exception e# (fail e#))))
+        (catch Exception e# (fail [e#]))))
 
 (defmacro task
   "Takes and number of expressions or actions and
@@ -188,8 +189,9 @@
    Returns a `Result` of that execution."
   {:added "1.0.0"}
   [^Task task] (is-task? task "execute-par")
-  (letfn [(recoverable? [tasks] (and (some broken? tasks) (.recovery task)))
-          (recover [tasks] (halfling.task/task ((.recovery task) (->> tasks (filter broken?) (mapv get!)))))]
+  (letfn [(errors [tasks] (->> tasks (filter broken?) (mapcat get!) (vec)))
+          (recoverable? [tasks] (and (some broken? tasks) (.recovery task)))
+          (recover [tasks] (halfling.task/task ((.recovery task) (errors tasks))))]
     (let [[compose & actions] (.actions task)
           tasks (->> (get! task)
                      (mapv run-async)
@@ -204,7 +206,7 @@
                  (run)
                  (peer))
             (recoverable? tasks) (peer (run (recover tasks)))
-            :else (fail (->> tasks (filter broken?) (map get!)))))))
+            :else (fail (errors tasks))))))
 
 (defn success
   "Given some `value`, returns a realised successful task containing the given `value`"
@@ -214,12 +216,12 @@
 (defn failure
   "Given some string `message`, returns a realised failed task containing an error with the given `message`"
   {:added "1.0.0"}
-  [message] (pure (fail (Exception. message))))
+  [message] (pure (fail [(Exception. message)])))
 
 (defn failure-t
   "Given a proper error `Throwable`, returns a realised failed task containing it."
   {:added "1.2.0"}
-  [^Throwable throwable] (pure (fail throwable)))
+  [^Throwable throwable] (pure (fail [throwable])))
 
 (defn done?
   "Returns `true` if `task` has been realised, `false` otherwise.
@@ -285,22 +287,27 @@
 
 (defn recover
   "Recovers a failed `task` with function `f`.
-
-   NON-PARALLEL EXECUTION: `f` has a `Throwable` error object as an argument.
-   PARALLEL EXECUTION: `f` has a collection of `Throwable` error objects as an argument.
+   `f` has a collection `Throwable` error objects as an argument, signifying all
+   errors that might've occurred during execution.
 
    `f` may either return a simple value or another task.
 
-   Note: Tasks that are generally run in parallel are tasks composed together
-   using `mapply`, `zip` or `sequenced`."
+   Note: Tasks run in parallel are tasks composed together using `mapply`, `zip` or `sequenced`."
   {:added "1.0.0"}
   [^Task task f] (is-task? task "recover")
   (remap {:recovery f} task))
 
+(defmacro recover-as [^Task task value]
+  "Like `recover` but instead of a function, receives a single value
+   with which it will recover the task.
+   Ignores any errors from previous executions."
+  {:added "1.3.0"}
+  `(recover ~task (fn [e#] ~value)))
+
 (defn get!
-  "Returns the value of the `Result` of `task`. Blocks `task` until it is realised.
+  "Returns the value of `task`. Blocks `task` until it is realised.
    If `task` is successful, returns its value.
-   If it is failed, returns the `Throwable` error object.
+   If it is failed, returns a collection of `Throwable` error objects.
    Note: Doesn't run the task!"
   {:added "1.0.0"}
   ([^Task task] (is-task? task "get!")
@@ -309,8 +316,8 @@
    (-> (wait task timeout else) (.future) (deref) (:value))))
 
 (defn get-or-else
-  "Returns the value of the `Result` of `task` if it was successful,
-   returns `else` otherwise. Block `task` until it is realised.
+  "Returns the value of `task` if it was successful,
+   returns `else` otherwise. Blocks `task` until it is realised.
    Note: Doesn't run the task!"
   {:added "1.0.0"}
   ([^Task task else] (is-task? task "get-or-else")
@@ -365,15 +372,44 @@
    (do-tasks [a (task 1)
               _ (println a)
               b (task 2)]
-    (+ a b)"
-  {:added "1.0.0"}
+    (+ a b))
+
+   As of 1.3.0 also supports syntax for `recover` and `recover-as`:
+   (do-tasks [a (task 1)
+              _ (println a)
+              b (task 2)
+              :recover (fn [errors] (mapv #(.getMessage %) errors)]
+    (+ a b))
+
+    ...
+
+    (do-tasks [a (task 1)
+               _ (println a)
+               b (task 2)
+               :recover-as -1]
+     (+ a b))"
+  {:added   "1.0.0"
+   :revised "1.3.0"}
   [bindings & body]
-  (->> (destructure bindings)
-       (partition 2)
-       (reverse)
-       (reduce
-         (fn [expr [name# binding#]]
-           `(then (task ~binding#) (fn [~name#] ~expr))) (cons 'do body))))
+  (let [bindings#   (partition 2 bindings)
+        recovery-f# (some (fn [[n# f#]] (when (= :recover n#) f#)) bindings#)
+        recovery-v# (some (fn [[n# v#]] (when (= :recover-as n#) v#)) bindings#)
+        task#       (->> bindings#
+                         (remove (fn [[n# _]]
+                                   (or (= :recover n#)
+                                       (= :recover-as n#))))
+                         (reduce concat)
+                         (destructure)
+                         (partition 2)
+                         (reverse)
+                         (reduce
+                          (fn [expr [name# binding#]]
+                            `(then (task ~binding#) (fn [~name#] ~expr)))
+                          (cons 'do body)))]
+    (cond
+      recovery-f# `(recover ~task# ~recovery-f#)
+      recovery-v# `(recover-as ~task# ~recovery-v#)
+      :else task#)))
 
 (defn run
   "Runs `task` synchronously.

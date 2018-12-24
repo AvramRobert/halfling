@@ -107,15 +107,45 @@
 
 (defn comprehend [task1 task2 task3 f]
   (is (= (extract! (do-tasks [a task1
-                             b task2
-                             c task3]
+                              b task2
+                              c task3]
                              (f a b c)))
          (extract! (then task1
                          (fn [a]
-                       (then task2
-                         (fn [b]
-                            (then task3
-                               (fn [c] (f a b c)))))))))))
+                           (then task2
+                                 (fn [b]
+                                   (then task3
+                                         (fn [c] (f a b c)))))))))))
+
+(defn comprehend-recovered [task1 task2 task3 f]
+  (is (= (extract! (do-tasks [a task1
+                              b task2
+                              c task3
+                              :recover (fn [errs] (mapv #(.getMessage %) errs))]
+                             (f a b c)))
+         (extract! (recover
+                     (then task1
+                           (fn [a]
+                             (then task2
+                                   (fn [b]
+                                     (then task3
+                                           (fn [c] (f a b c)))))))
+                     (fn [errs] (mapv #(.getMessage %) errs)))))))
+
+(defn comprehend-directly-recovered [task1 task2 task3 f]
+  (is (= (extract! (do-tasks [a task1
+                              b task2
+                              c task3
+                              :recover-as "Recovery"]
+                             (f a b c)))
+         (extract! (recover-as
+                     (then task1
+                           (fn [a]
+                             (then task2
+                                   (fn [b]
+                                     (then task3
+                                           (fn [c] (f a b c)))))))
+                     "Recovery")))))
 
 (defspec comprehension
          100
@@ -126,7 +156,9 @@
          (let [args (if bool
                       [(task a) (task (throw error)) (task c) +]
                       [(task a) (task b) (task c) +])]
-           (apply comprehend args))))
+           (apply comprehend args)
+           (apply comprehend-recovered args)
+           (apply comprehend-directly-recovered args))))
 
 ;; VI. Applicativity
 
@@ -180,12 +212,19 @@
              (extract!))
          expected)))
 
+(defn recovered-as [tsk expected]
+  (is (= (-> tsk
+             (then (fn [_] (throw error)))
+             (recover-as expected)
+             (extract!))
+         expected)))
+
 (defn recovered-error [tsk]
   (let [msg "Failed!"]
     (is (= (-> tsk
                (then-do (failure msg))
-               (recover #(.getMessage %))
-               (extract!)) msg))))
+               (recover (fn [errs] (mapv #(.getMessage %) errs)))
+               (extract!)) [msg]))))
 
 (defn recovered-parallel-error [tsk1 tsk2 tsk3]
   (let [msg1 "Failed-1!"
@@ -193,7 +232,7 @@
         tsk-e (-> (zip tsk1
                        (-> tsk2 (then-do (failure msg1)))
                        (-> tsk3 (then-do (failure msg2))))
-                  (recover (fn [r] (map #(.getMessage %) r))))]
+                  (recover (fn [errs] (mapv #(.getMessage %) errs))))]
     (is (= (extract! tsk-e) [msg1 msg2]))))
 
 (defspec recoverability
@@ -201,6 +240,7 @@
          (for-all [int gen/int
                    recover gen/string]
                   (recovered (task int) recover)
+                  (recovered-as (task int) recover)
                   (recovered-error (task int))
                   (recovered-parallel-error (task int) (task int) (task int))))
 

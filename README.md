@@ -63,7 +63,7 @@ The task itself captures a promise which will eventually be filled with the resu
 ### Task values
 In some cases, you may want to retrieve the actual inner value of a task.
 
-This can be achieved either with `get!`, `deref` or `@` and these can return one of three (and only three) things:
+This can be achieved either with `get!`, `deref` or `@` and these can return one of two things:
 
 * If a task succeeded, it will return the concrete value of that execution:
 ```clojure
@@ -73,17 +73,8 @@ This can be achieved either with `get!`, `deref` or `@` and these can return one
 > @(t/run adding)
 => 2
 ```
-* If a task failed during **NON-PARALLEL** execution, it will contain the `Throwable` object (or Exception) with which it failed
-```clojure
-#Task{:executed? true,
-      :status :failed,
-      :value #error{:cause "Something went wrong!",
-                    :via [...],
-                    :trace [...],
-                    }
-```
 
-* If a task failed during **PARALLEL** execution, it will contain a **collection** of the `Throwable` objects of all the failed executions
+* If a task failed, it will contain a **collection** of `Throwable` objects of all errors that might've occurred
 ```clojure
 #Task{:executed? true,
       :status :failed,
@@ -122,7 +113,7 @@ There are a number of functions that check different versions of a task's status
 In addition, you can create finished successful or failed tasks with:
 
 * `success` -  given any value, returns a realised successful task containing that value
-* `failure` - given a string message, returns a realised failed task with that message as an error
+* `failure` - given a string message, returns a realised failed task with that message wrapped in a Throwable as an error
 * `failure-t` - given a proper `Exception` or `Throwable` object, returns a realised failed task with that error
 
 ### Composing tasks
@@ -170,6 +161,7 @@ call to either `run` or `run-async` is made:
 => 2
 ```
 The task will then pick up where it's left off and execute the remaining changes.
+
 ### Fire-and-forget effects
 If you're not interested in the return value of some previous task,
 you can chain fire-and-forget-like task effects by using the `then-do` macro.
@@ -192,6 +184,31 @@ This is equivalent to:
        (t/task (fn [_] (println "Death is imminent!")))
        (t/run))
 ```
+
+### Task recovery
+A potentially failed task may be recovered with either `recover` or `recover-as`.
+
+Both of these may well return either simple values, or tasks alltogether.
+
+`recover` allows you to recover a task, based on the errors that occured, whilst `recover-as` simply
+ignores the errors and lets you reset the task to any given value after failure.
+
+```clojure
+> @(-> (t/task (throw (Exception. "Failed)))
+       (t/recover (fn [errors] (mapv #(.getMessage %))))
+       (t/run))
+
+["Failed"]
+```
+
+```clojure
+> @(-> (t/task (throw (Exception. "Failed")))
+       (t/recover-as -1)
+       (t/run))
+
+-1
+```
+
 ### Task comprehension
 Whilst threading tasks from one to the other looks
 pretty, it isn't particuarly suited for working with
@@ -213,6 +230,18 @@ With this, you can use binding-forms to treat task
 values as if they were realized, and use them in that local context.
 `do-tasks` accepts both simple values and other tasks. It automatically "promotes"
 simple values to tasks in order to work with them.
+
+As of `1.3.0`, `do-tasks` also supports syntax for `recover` and `recover-as`:
+```clojure
+> (def crucial-maths
+      (t/do-tasks [a (t/task (+ 1 1))
+                   b1 (t/task (inc a))
+                   b2 (dec a)
+                   :recover (fn [errors] (mapv #(.getMessage %) errors))]
+                  (+ a (- b1 b2))))
+=> #'user/crucial-maths
+```
+
 
 <b>Note:</b> `do-tasks` essentially desugars to nested `then`-calls,
 which means that the binding-forms are <i>serialised</i>.
