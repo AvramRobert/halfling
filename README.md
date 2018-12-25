@@ -55,7 +55,7 @@ This type of execution will naturally block the current thread until the tasks f
 > (t/run-async adding)
 => #Task{:executed? false, :status :pending, :value nil}
 ```
-Running a task asynchronously will not block the current thread and return immediately.
+Running a task asynchronously will not block the current thread and will return immediately.
 The task itself captures a promise which will eventually be filled with the result of that execution.
 
 **Note**: `wait` can be used to block explicitly.
@@ -74,17 +74,17 @@ This can be achieved either with `get!`, `deref` or `@` and these can return one
 => 2
 ```
 
-* If a task failed, it will contain a **collection** of `Throwable` objects of all errors that might've occurred
+* If a task failed, it will contain the `Throwable` object of the error that occurred:
 ```clojure
-#Task{:executed? true,
-      :status :failed,
-      :value [#error{:cause "Something went wrong!",
-                                  :via [...],
-                                  :trace [...],
-                                  }
-              ...]
-```
+> (-> (t/task (throw (Exception. "Something went wrong!")))
+      (t/run)
+      (t/get!))
 
+=> #error{:cause "Something went wrong!",
+          :via [...],
+          :trace [...],
+         }
+```
 
 There's a separate `get-or-else` function, which will return either the value in
 case of a success, or a provided `else` alternative in case of failure:
@@ -103,18 +103,18 @@ case of a success, or a provided `else` alternative in case of failure:
 **Note:** All of these will **block** an asynchronously executing task.
 
 ### Task status
-There are a number of functions that check different versions of a task's status:
+There are a number of functions that check different types of a task's status:
 
-* `done?` - checks if a task has been **realised**
-* `executed?` - checks if a task has been **run** and **realised**
-* `fulfilled?` - checks if a task has been **realised** and was **successful**
-* `broken?` - checks if a task has been **realised** but **failed**
+* `done?` - checks if a **running task** has **finished running**
+* `executed?` - checks if a task **has been run** and has **finished running**
+* `fulfilled?` - checks if a **running task** has **finished running** and was **successful**
+* `broken?` - checks if a **running task** has **finished running** and **failed**
 
 In addition, you can create finished successful or failed tasks with:
 
-* `success` -  given any value, returns a realised successful task containing that value
-* `failure` - given a string message, returns a realised failed task with that message wrapped in a Throwable as an error
-* `failure-t` - given a proper `Exception` or `Throwable` object, returns a realised failed task with that error
+* `success` -  given any value, returns a finished successful task containing that value
+* `failure` - given a string message, returns a finished failed task with that message wrapped in a Throwable as an error
+* `failure-t` - given a proper `Exception` or `Throwable` object, returns a finished failed task with that error
 
 ### Composing tasks
 Tasks can be composed by using the `then` primitive. This takes a
@@ -190,15 +190,15 @@ A potentially failed task may be recovered with either `recover` or `recover-as`
 
 Both of these may well return either simple values, or tasks alltogether.
 
-`recover` allows you to recover a task, based on the errors that occured, whilst `recover-as` simply
-ignores the errors and lets you reset the task to any given value after failure.
+`recover` allows you to recover a task, based on the error that occured, whilst `recover-as` simply
+ignores the error and lets you reset the task to any given value after failure.
 
 ```clojure
 > @(-> (t/task (throw (Exception. "Failed)))
-       (t/recover (fn [errors] (mapv #(.getMessage %))))
+       (t/recover #(.getMessage %))
        (t/run))
 
-["Failed"]
+=> "Failed"
 ```
 
 ```clojure
@@ -206,7 +206,7 @@ ignores the errors and lets you reset the task to any given value after failure.
        (t/recover-as -1)
        (t/run))
 
--1
+=> -1
 ```
 
 ### Task comprehension
@@ -231,17 +231,19 @@ values as if they were realized, and use them in that local context.
 `do-tasks` accepts both simple values and other tasks. It automatically "promotes"
 simple values to tasks in order to work with them.
 
-As of `1.3.0`, `do-tasks` also supports syntax for `recover` and `recover-as`:
+As of `1.2.1`, `do-tasks` also supports syntax for `recover` and `recover-as`.
+
+These can be placed wherever within the `do-tasks` binding block:
+
 ```clojure
 > (def crucial-maths
       (t/do-tasks [a (t/task (+ 1 1))
                    b1 (t/task (inc a))
                    b2 (dec a)
-                   :recover (fn [errors] (mapv #(.getMessage %) errors))]
+                   :recover #(.getMessage %)]
                   (+ a (- b1 b2))))
 => #'user/crucial-maths
 ```
-
 
 <b>Note:</b> `do-tasks` essentially desugars to nested `then`-calls,
 which means that the binding-forms are <i>serialised</i>.
@@ -282,6 +284,7 @@ Halfing supports parallel execution with the functions:
 => #{1 2 3}
 ```
 
+Failed parallel tasks will contain the error of the **first** execution that failed.
 See `halfing.task` for more information.
 
 #### Library functions

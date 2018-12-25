@@ -121,7 +121,7 @@
   (is (= (extract! (do-tasks [a task1
                               b task2
                               c task3
-                              :recover (fn [errs] (mapv #(.getMessage %) errs))]
+                              :recover #(.getMessage %)]
                              (f a b c)))
          (extract! (recover
                      (then task1
@@ -130,7 +130,7 @@
                                    (fn [b]
                                      (then task3
                                            (fn [c] (f a b c)))))))
-                     (fn [errs] (mapv #(.getMessage %) errs)))))))
+                     #(.getMessage %))))))
 
 (defn comprehend-directly-recovered [task1 task2 task3 f]
   (is (= (extract! (do-tasks [a task1
@@ -223,8 +223,8 @@
   (let [msg "Failed!"]
     (is (= (-> tsk
                (then-do (failure msg))
-               (recover (fn [errs] (mapv #(.getMessage %) errs)))
-               (extract!)) [msg]))))
+               (recover #(.getMessage %))
+               (extract!)) msg))))
 
 (defn recovered-parallel-error [tsk1 tsk2 tsk3]
   (let [msg1 "Failed-1!"
@@ -232,8 +232,8 @@
         tsk-e (-> (zip tsk1
                        (-> tsk2 (then-do (failure msg1)))
                        (-> tsk3 (then-do (failure msg2))))
-                  (recover (fn [errs] (mapv #(.getMessage %) errs))))]
-    (is (= (extract! tsk-e) [msg1 msg2]))))
+                  (recover #(.getMessage %)))]
+    (is (= (extract! tsk-e) msg1))))
 
 (defspec recoverability
          100

@@ -149,7 +149,7 @@
    :revised "1.3.0"}
   [& body]
   `(try (succeed (do ~@body))
-        (catch Exception e# (fail [e#]))))
+        (catch Exception e# (fail e#))))
 
 (defmacro task
   "Takes and number of expressions or actions and
@@ -189,9 +189,9 @@
    Returns a `Result` of that execution."
   {:added "1.0.0"}
   [^Task task] (is-task? task "execute-par")
-  (letfn [(errors [tasks] (->> tasks (filter broken?) (mapcat get!) (vec)))
+  (letfn [(error [tasks] (->> tasks (filter broken?) (first) (get!)))
           (recoverable? [tasks] (and (some broken? tasks) (.recovery task)))
-          (recover [tasks] (halfling.task/task ((.recovery task) (errors tasks))))]
+          (recover [tasks] (halfling.task/task ((.recovery task) (error tasks))))]
     (let [[compose & actions] (.actions task)
           tasks (->> (get! task)
                      (mapv run-async)
@@ -206,7 +206,7 @@
                  (run)
                  (peer))
             (recoverable? tasks) (peer (run (recover tasks)))
-            :else (fail (errors tasks))))))
+            :else (fail (error tasks))))))
 
 (defn success
   "Given some `value`, returns a realised successful task containing the given `value`"
@@ -216,12 +216,12 @@
 (defn failure
   "Given some string `message`, returns a realised failed task containing an error with the given `message`"
   {:added "1.0.0"}
-  [message] (pure (fail [(Exception. message)])))
+  [message] (pure (fail (Exception. message))))
 
 (defn failure-t
   "Given a proper error `Throwable`, returns a realised failed task containing it."
   {:added "1.2.0"}
-  [^Throwable throwable] (pure (fail [throwable])))
+  [^Throwable throwable] (pure (fail throwable)))
 
 (defn done?
   "Returns `true` if `task` has been realised, `false` otherwise.
@@ -287,12 +287,12 @@
 
 (defn recover
   "Recovers a failed `task` with function `f`.
-   `f` has a collection `Throwable` error objects as an argument, signifying all
-   errors that might've occurred during execution.
-
+   `f` has as argument the `Throwable` error object that occurred during execution.
    `f` may either return a simple value or another task.
 
-   Note: Tasks run in parallel are tasks composed together using `mapply`, `zip` or `sequenced`."
+   Note:
+    In the case of parallel tasks, the `f` will have as an argument the `Throwable` object of
+    the first execution that failed."
   {:added "1.0.0"}
   [^Task task f] (is-task? task "recover")
   (remap {:recovery f} task))
@@ -378,7 +378,7 @@
    (do-tasks [a (task 1)
               _ (println a)
               b (task 2)
-              :recover (fn [errors] (mapv #(.getMessage %) errors)]
+              :recover #(.getMessage %)]
     (+ a b))
 
     ...
