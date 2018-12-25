@@ -1,6 +1,18 @@
 # Change Log
 All notable changes to this project will be documented in this file. This change log follows the conventions of [keepachangelog.com](http://keepachangelog.com/).
 
+### 1.2.1
+
+### Changed
+Given the ambiguity in errors when mixing parallel with non-parallel executions,
+failed parallel executions do not contain collections of `Throwable` objects anymore,
+but rather a single `Throwable` object pertaining to the **first execution** that failed.
+
+### Added
+Function `recover-as`, that resets a failed task to a successful task, containing a user-provided value.
+
+Syntax for `recover` and `recover-as` in `do-tasks` block.
+
 ### 1.2.0
 
 ### Changed
