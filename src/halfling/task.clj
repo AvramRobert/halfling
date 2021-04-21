@@ -20,7 +20,8 @@
          task?
          execute
          execute-par
-         remap)
+         remap
+         do-tasks)
 
 (def ^:const serial :serial)
 (def ^:const parallel :parallel)
@@ -146,7 +147,7 @@
    {:status :failure
     :value  [<throwable/exception object>]}"
   {:added   "1.0.0"
-   :revised "1.3.0"}
+   :revised "1.2.0"}
   [& body]
   `(try (succeed (do ~@body))
         (catch Exception e# (fail e#))))
@@ -301,8 +302,58 @@
   "Like `recover` but instead of a function, receives a single value
    with which it will recover the task.
    Ignores any errors from previous executions."
-  {:added "1.3.0"}
+  {:added "1.2.0"}
   `(recover ~task (fn [e#] ~value)))
+
+(defmacro do-tasks
+  "A `let`-like construct that allows working with
+  tasks as if they were successfully realised.
+  Binds single tasks to names in a `let`-like fashion and
+  considers the names as being the realised values of those tasks.
+  In addition, it also supports non-task expressions. These will
+  automatically be lifted to a `task`.
+  Example:
+   (do-tasks [a (task 1)
+              _ (println a)
+              b (task 2)]
+    (+ a b))
+
+   As of 1.2.0 also supports syntax for `recover` and `recover-as`:
+   (do-tasks [a (task 1)
+              _ (println a)
+              b (task 2)
+              :recover #(.getMessage %)]
+    (+ a b))
+
+    ...
+
+    (do-tasks [a (task 1)
+               _ (println a)
+               b (task 2)
+               :recover-as -1]
+     (+ a b))"
+  {:added   "1.0.0"
+   :revised "1.2.0"}
+  [bindings & body]
+  (let [bindings#   (partition 2 bindings)
+        recovery-f# (some (fn [[n# f#]] (when (= :recover n#) f#)) bindings#)
+        recovery-v# (some (fn [[n# v#]] (when (= :recover-as n#) v#)) bindings#)
+        task#       (->> bindings#
+                         (remove (fn [[n# _]]
+                                   (or (= :recover n#)
+                                       (= :recover-as n#))))
+                         (reduce concat)
+                         (destructure)
+                         (partition 2)
+                         (reverse)
+                         (reduce
+                           (fn [expr [name# binding#]]
+                             `(then (task ~binding#) (fn [~name#] ~expr)))
+                           (cons 'do body)))]
+    (cond
+      recovery-f# `(recover ~task# ~recovery-f#)
+      recovery-v# `(recover-as ~task# ~recovery-v#)
+      :else task#)))
 
 (defn get!
   "Returns the value of `task`. Blocks `task` until it is realised.
@@ -348,68 +399,36 @@
   [& tasks] (all-tasks? tasks "zip")
   (apply (partial mapply vector) tasks))
 
-(defn sequenced
+(defn sequenced-par
   "Takes a collection of tasks and lazily transforms it in a task containing
    a collection of all the values of those tasks.
    If one task fails, the total result will be a failure.
    `tasks` will be run in parallel."
-  {:added "1.0.0"}
-  [tasks] (all-tasks? tasks "sequenced")
+  {:added "1.0.0"
+   :revised "1.3.0"}
+  [tasks] (all-tasks? tasks "sequenced-par")
   (let [inside-out (apply zip tasks)]
     (cond
       (set? tasks) (then inside-out set)
-      (list? tasks) (then inside-out list)
+      (list? tasks) (then inside-out seq)
       :else inside-out)))
 
-(defmacro do-tasks
-  "A `let`-like construct that allows working with
-  tasks as if they were successfully realised.
-  Binds single tasks to names in a `let`-like fashion and
-  considers the names as being the realised values of those tasks.
-  In addition, it also supports non-task expressions. These will
-  automatically be lifted to a `task`.
-  Example:
-   (do-tasks [a (task 1)
-              _ (println a)
-              b (task 2)]
-    (+ a b))
-
-   As of 1.3.0 also supports syntax for `recover` and `recover-as`:
-   (do-tasks [a (task 1)
-              _ (println a)
-              b (task 2)
-              :recover #(.getMessage %)]
-    (+ a b))
-
-    ...
-
-    (do-tasks [a (task 1)
-               _ (println a)
-               b (task 2)
-               :recover-as -1]
-     (+ a b))"
-  {:added   "1.0.0"
-   :revised "1.3.0"}
-  [bindings & body]
-  (let [bindings#   (partition 2 bindings)
-        recovery-f# (some (fn [[n# f#]] (when (= :recover n#) f#)) bindings#)
-        recovery-v# (some (fn [[n# v#]] (when (= :recover-as n#) v#)) bindings#)
-        task#       (->> bindings#
-                         (remove (fn [[n# _]]
-                                   (or (= :recover n#)
-                                       (= :recover-as n#))))
-                         (reduce concat)
-                         (destructure)
-                         (partition 2)
-                         (reverse)
-                         (reduce
-                          (fn [expr [name# binding#]]
-                            `(then (task ~binding#) (fn [~name#] ~expr)))
-                          (cons 'do body)))]
+(defn sequenced
+  "Takes a collection of tasks and lazily transforms it in a task containing
+   a collection of all the values of those tasks.
+   If one task fails, the total result will be a failure.
+   `tasks` will be run sequentially."
+  {:added "1.0.0"}
+  [tasks] (all-tasks? tasks "sequenced")
+  (let [inside-out (reduce
+                     (fn [current next]
+                       (do-tasks [acc    current
+                                  result next]
+                         (conj acc result))) (task []) tasks)]
     (cond
-      recovery-f# `(recover ~task# ~recovery-f#)
-      recovery-v# `(recover-as ~task# ~recovery-v#)
-      :else task#)))
+      (set? tasks) (then inside-out set)
+      (list? tasks) (then inside-out seq)
+      :else inside-out)))
 
 (defn run
   "Runs `task` synchronously.

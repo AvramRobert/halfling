@@ -1,6 +1,18 @@
 # Change Log
 All notable changes to this project will be documented in this file. This change log follows the conventions of [keepachangelog.com](http://keepachangelog.com/).
 
+### 1.3.0
+
+### Changed
+Renamed `sequenced` to `sequenced-par` to more explicitly state its execution type.
+
+### Added
+Proper `sequenced` function that executes its contents sequentially.
+
+### Fixed
+Case in `sequenced-par` where a list of tasks would've been transformed to a task of lists of lists
+Documentation error.
+
 ### 1.2.1
 
 ### Changed

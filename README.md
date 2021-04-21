@@ -280,11 +280,11 @@ Halfing supports parallel execution with the functions:
    those tasks in the same type of collection:
 
 ```clojure
-> @(t/run (t/sequenced #{task1 task2 task3})) ; task1, task2, task3 executed in parallel
+> @(t/run (t/sequenced #{task1 task2 task3})) ; task1, task2, task3 executed in sequence
 => #{1 2 3}
 ```
 
-Failed parallel tasks will contain the error of the **first** execution that failed.
+Failed tasks will contain the error of the **first** execution that failed.
 See `halfing.task` for more information.
 
 #### Library functions

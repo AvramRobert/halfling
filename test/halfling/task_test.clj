@@ -173,23 +173,29 @@
   (is (= (extract! (zip task1 task2))
          [(extract! task1) (extract! task2)])))
 
+(defn par-sequencing [coll-tasks to-coll]
+  (is (= (extract! (sequenced-par coll-tasks))
+         (to-coll (mapv extract! coll-tasks)))))
+
 (defn sequencing [coll-tasks to-coll]
   (is (= (extract! (sequenced coll-tasks))
          (to-coll (mapv extract! coll-tasks)))))
 
 (defspec applicativity
          100
-         (for-all [a gen/int
-                   b gen/int
-                   bool gen/boolean]
+  (for-all [a gen/int
+            b gen/int]
            (let [task1 (task a)
                  task2 (task b)]
              (combination task1 task2 +)
              (propagation task1 inc)
              (zipping task1 task2)
+             (par-sequencing [task1 task2] vec)
+             (par-sequencing #{task1 task2} set)
+             (par-sequencing (list task1 task2) seq)
              (sequencing [task1 task2] vec)
              (sequencing #{task1 task2} set)
-             (sequencing (list task1 task2) list))))
+             (sequencing (list task1 task2) seq))))
 
 ;; VII. Destructivity
 
@@ -264,7 +270,7 @@
 
 (defn impartial-exec [val vals]
   (is (= (-> (task val)
-             (then (fn [x] (->> vals (mapv #(task (+ x %))) (sequenced))))
+             (then (fn [x] (->> vals (mapv #(task (+ x %))) (sequenced-par))))
              (extract!))
          (mapv #(+ val %) vals))))
 
