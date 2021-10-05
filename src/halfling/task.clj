@@ -147,10 +147,10 @@
    {:status :failure
     :value  [<throwable/exception object>]}"
   {:added   "1.0.0"
-   :revised "1.2.0"}
+   :revised "1.3.1"}
   [& body]
   `(try (succeed (do ~@body))
-        (catch Exception e# (fail e#))))
+        (catch Exception e# (fail (Throwable->map e#)))))
 
 (defmacro task
   "Takes and number of expressions or actions and
@@ -214,15 +214,17 @@
   {:added "1.0.0"}
   [value] (pure (succeed value)))
 
-(defn failure
-  "Given some string `message`, returns a realised failed task containing an error with the given `message`"
-  {:added "1.0.0"}
-  [message] (pure (fail (Exception. message))))
-
 (defn failure-t
   "Given a proper error `Throwable`, returns a realised failed task containing it."
-  {:added "1.2.0"}
-  [^Throwable throwable] (pure (fail throwable)))
+  {:added "1.2.0"
+   :revised "1.3.1"}
+  [^Throwable throwable] (pure (fail (Throwable->map throwable))))
+
+(defn failure
+  "Given some string `message`, returns a realised failed task containing an error with the given `message`"
+  {:added "1.0.0"
+   :revised "1.3.1"}
+  [message] (failure-t (Exception. message)))
 
 (defn done?
   "Returns `true` if `task` has been realised, `false` otherwise.

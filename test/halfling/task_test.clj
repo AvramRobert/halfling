@@ -21,7 +21,7 @@
 
 (defspec associativity
          100
-         (for-all [int  gen/int
+         (for-all [int  gen/small-integer
                    bool gen/boolean]
             (let [f (if bool
                       (fn [_] (throw error))
@@ -40,7 +40,7 @@
 
 (defspec right-identity
          100
-         (for-all [int  gen/int
+         (for-all [int  gen/small-integer
                    bool gen/boolean]
             (let [tsk (if bool
                       (task (throw error))
@@ -59,7 +59,7 @@
 
 (defspec left-identity
          100
-         (for-all [int  gen/int
+         (for-all [int  gen/small-integer
                    bool gen/boolean]
            (let [f (if bool
                      (constantly (task (throw error)))
@@ -94,7 +94,7 @@
 
 (defspec asynchronicity
          100
-         (for-all [int gen/int]
+         (for-all [int gen/small-integer]
             (let [duration 20
                   tsk (task (Thread/sleep duration) (inc int))]
               (asynchronous tsk duration)
@@ -121,7 +121,7 @@
   (is (= (extract! (do-tasks [a task1
                               b task2
                               c task3
-                              :recover #(.getMessage %)]
+                              :recover :cause]
                              (f a b c)))
          (extract! (recover
                      (then task1
@@ -130,7 +130,7 @@
                                    (fn [b]
                                      (then task3
                                            (fn [c] (f a b c)))))))
-                     #(.getMessage %))))))
+                     :cause)))))
 
 (defn comprehend-directly-recovered [task1 task2 task3 f]
   (is (= (extract! (do-tasks [a task1
@@ -149,9 +149,9 @@
 
 (defspec comprehension
          100
-         (for-all [a gen/int
-                   b gen/int
-                   c gen/int
+         (for-all [a gen/small-integer
+                   b gen/small-integer
+                   c gen/small-integer
                    bool gen/boolean]
          (let [args (if bool
                       [(task a) (task (throw error)) (task c) +]
@@ -183,8 +183,8 @@
 
 (defspec applicativity
          100
-  (for-all [a gen/int
-            b gen/int]
+  (for-all [a gen/small-integer
+            b gen/small-integer]
            (let [task1 (task a)
                  task2 (task b)]
              (combination task1 task2 +)
@@ -229,7 +229,7 @@
   (let [msg "Failed!"]
     (is (= (-> tsk
                (then-do (failure msg))
-               (recover #(.getMessage %))
+               (recover :cause)
                (extract!)) msg))))
 
 (defn recovered-parallel-error [tsk1 tsk2 tsk3]
@@ -238,12 +238,12 @@
         tsk-e (-> (zip tsk1
                        (-> tsk2 (then-do (failure msg1)))
                        (-> tsk3 (then-do (failure msg2))))
-                  (recover #(.getMessage %)))]
+                  (recover :cause))]
     (is (= (extract! tsk-e) msg1))))
 
 (defspec recoverability
          100
-         (for-all [int gen/int
+         (for-all [int gen/small-integer
                    recover gen/string]
                   (recovered (task int) recover)
                   (recovered-as (task int) recover)
@@ -262,7 +262,7 @@
 
 (defspec alternation
          100
-         (for-all [int gen/int
+         (for-all [int gen/small-integer
                    alt gen/string]
            (alternate (task int) alt)))
 
@@ -276,6 +276,32 @@
 
 (defspec impartiality
          100
-         (for-all [int gen/int
-                   other-ints (gen/vector gen/int)]
+         (for-all [int gen/small-integer
+                   other-ints (gen/vector gen/small-integer)]
                   (impartial-exec int other-ints)))
+
+;; XI. Error accessibility
+
+(defn has-error [result msg]
+  (is (= (:cause result) msg))
+  (is (true? (contains? result :trace))))
+
+(defn return-error-as-map [msg]
+  (-> (task (throw (Exception. msg)))
+      (run)
+      (deref)
+      (has-error msg)))
+
+(defn recover-with-map [msg]
+  (let [param (atom {})
+        _ (-> (task (throw (Exception. msg)))
+              (recover #(reset! param %))
+              (run)
+              (deref))]
+    (has-error @param msg)))
+
+(defspec error-accessibility
+         100
+  (for-all [msg gen/string-alphanumeric]
+           (return-error-as-map msg)
+           (recover-with-map msg)))

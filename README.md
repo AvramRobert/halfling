@@ -74,16 +74,15 @@ This can be achieved either with `get!`, `deref` or `@` and these can return one
 => 2
 ```
 
-* If a task failed, it will contain the `Throwable` object of the error that occurred:
+* If a task failed, it will contain a map version of the `Exception` that occurred:
 ```clojure
 > (-> (t/task (throw (Exception. "Something went wrong!")))
       (t/run)
       (t/get!))
 
-=> #error{:cause "Something went wrong!",
-          :via [...],
-          :trace [...],
-         }
+=> { :cause "Something went wrong!", 
+     :via [...],
+     :trace [...] }
 ```
 
 There's a separate `get-or-else` function, which will return either the value in
@@ -330,6 +329,6 @@ Current functions:
 ```
 ## License
 
-Copyright © 2018 Robert Marius Avram
+Copyright © 2017-2021 Robert Marius Avram
 
 Distributed under the MIT License.
